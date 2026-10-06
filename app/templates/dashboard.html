@@ -62,7 +62,7 @@ main{max-width:1100px;margin:0 auto;padding:14px 16px 90px}
 .fi small{color:var(--mut);flex-basis:100%}
 
 #list{display:grid;gap:10px;grid-template-columns:1fr;align-items:start}
-@media(min-width:1000px){#list{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){ #list{grid-template-columns:1fr 1fr}}
 .m{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .m[open]{grid-column:1/-1}
 .m>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;gap:12px;align-items:center}
@@ -483,7 +483,7 @@ main{max-width:1220px;padding:18px 18px 100px}
 #list{
   gap:12px;
 }
-@media(min-width:1000px){#list{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){ #list{grid-template-columns:1fr 1fr}}
 .m{
   border:1px solid var(--line);
   border-left-width:4px;
@@ -2365,7 +2365,7 @@ load(); setPoll(10000);
 #warFlash.on{display:flex;animation:warBlink .5s ease-in-out 6}
 #warFlash b{font-size:clamp(30px,10vw,64px)}#warFlash span{font-size:clamp(16px,5vw,26px)}
 @keyframes warBlink{50%{background:rgba(255,23,99,.96)}}
-@media(prefers-reduced-motion:reduce){#warFlash.on{animation:none}}
+@media(prefers-reduced-motion:reduce){ #warFlash.on{animation:none}}
 </style>
 <script>
 (() => {
