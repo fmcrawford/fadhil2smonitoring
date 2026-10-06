@@ -1,6 +1,5 @@
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -11,6 +10,7 @@ from .db import (
     add_restock_log,
     list_enabled_webhooks,
     load_event_state,
+    target_user_ids,
     upsert_event_state,
 )
 from .security import decrypt_webhook
@@ -32,6 +32,7 @@ GROUP_NAMES = ["JKT48", "AKB48"]
 COLOR_GREEN = 0x2ECC71
 COLOR_BLUE = 0x3498DB
 COLOR_PURPLE = 0x9B59B6
+COLOR_GOLD = 0xF1C40F
 
 STATE_LOCK = threading.Lock()
 
@@ -203,6 +204,7 @@ def send_activation_message(webhook_url: str):
         (
             "Webhook berhasil terhubung.\n\n"
             "• **Restock alert:** realtime melalui local collector\n"
+            "• **Member Sniping:** target dapat dipilih dari dashboard\n"
             "• **Daily report:** 08:00 / 12:00 / 20:00 WIB\n"
             "• **Monitoring:** mengikuti pilihan grup di dashboard\n\n"
             "Sistem monitoring sekarang aktif."
@@ -231,7 +233,9 @@ def broadcast_restock(item: dict, old_stock: int):
         )
         return
 
-    description = (
+    sniping_users = target_user_ids(item["group"], item["name"])
+
+    base_description = (
         f"> 🏢 **Grup:** `{item['group']}`\n"
         f"> 👤 **Member:** `{item['name']}`\n"
         f"> 🕒 **Sesi:** `{item['session']}`\n"
@@ -243,22 +247,43 @@ def broadcast_restock(item: dict, old_stock: int):
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
+            is_target = int(hook["user_id"]) in sniping_users
 
-            content = (
-                "@everyone 🚨 **RESTOCK TERDETEKSI!**"
-                if hook["mention_everyone"]
-                else "🚨 **RESTOCK TERDETEKSI!**"
-            )
+            if is_target:
+                title = "🎯 SNIPING TARGET RESTOCK!"
+                description = (
+                    "⭐ **Member ini ada di daftar sniping Anda.**\n\n"
+                    + base_description
+                )
+                content = (
+                    "@everyone 🎯 **TARGET MEMBER RESTOCK!**"
+                    if hook["mention_everyone"]
+                    else "🎯 **TARGET MEMBER RESTOCK!**"
+                )
+                color = COLOR_GOLD
+            else:
+                title = "🚨 2-SHOT RESTOCK ALERT!"
+                description = base_description
+                content = (
+                    "@everyone 🚨 **RESTOCK TERDETEKSI!**"
+                    if hook["mention_everyone"]
+                    else "🚨 **RESTOCK TERDETEKSI!**"
+                )
+                color = COLOR_BLUE
 
             send_embed(
                 webhook_url,
-                "🚨 2-SHOT RESTOCK ALERT!",
+                title,
                 description,
-                COLOR_BLUE,
+                color,
                 content=content,
             )
 
-            log.info("Restock dikirim ke webhook id=%s", hook["id"])
+            log.info(
+                "Restock dikirim ke webhook id=%s target=%s",
+                hook["id"],
+                is_target,
+            )
 
         except Exception:
             log.exception("Gagal mengirim restock webhook id=%s", hook["id"])
@@ -299,7 +324,6 @@ def send_scheduled_report(members, report_hour, group_meta=None):
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
-
             fields = []
 
             if hook["notify_jkt"]:
@@ -360,12 +384,10 @@ class MonitorService:
         for uid, row in self.prev_state.items():
             try:
                 group = row["group_name"]
-
                 if group not in EVENTS:
                     continue
 
                 stock = int(row["stock"])
-
                 restored.append(
                     {
                         "id": uid,
@@ -380,13 +402,11 @@ class MonitorService:
                 )
 
                 updated_at = row.get("updated_at")
-
                 if updated_at and (
                     latest_by_group[group] is None
                     or updated_at > latest_by_group[group]
                 ):
                     latest_by_group[group] = updated_at
-
             except Exception:
                 continue
 
@@ -395,7 +415,6 @@ class MonitorService:
                 RUNTIME_STATE["members"] = restored
 
             latest = None
-
             for group in GROUP_NAMES:
                 meta = RUNTIME_STATE["groups"][group]
                 meta["status"] = "cached"
@@ -417,18 +436,15 @@ class MonitorService:
             return
 
         self.stop_event.clear()
-
         self.thread = threading.Thread(
             target=self.run,
             daemon=True,
             name="48group-monitor",
         )
-
         self.thread.start()
 
     def stop(self):
         self.stop_event.set()
-
         if self.thread:
             self.thread.join(timeout=10)
 
@@ -437,7 +453,6 @@ class MonitorService:
             raise ValueError("Payload collector harus berupa JSON object.")
 
         groups_payload = payload.get("groups")
-
         if not isinstance(groups_payload, dict):
             raise ValueError("Payload harus memiliki object 'groups'.")
 
@@ -463,7 +478,6 @@ class MonitorService:
 
         for group in GROUP_NAMES:
             report = groups_payload.get(group)
-
             if not isinstance(report, dict):
                 continue
 
@@ -477,42 +491,29 @@ class MonitorService:
                 meta["last_http"] = http_status
 
             if not ok:
-                error = str(report.get("error") or "Local collector gagal mengambil API.")
-
+                error = str(
+                    report.get("error")
+                    or "Local collector gagal mengambil API."
+                )
                 with STATE_LOCK:
                     meta = RUNTIME_STATE["groups"][group]
                     meta["status"] = "cached" if dashboard_by_group[group] else "error"
                     meta["error"] = error
 
-                result_summary[group] = {
-                    "ok": False,
-                    "error": error,
-                }
-
+                result_summary[group] = {"ok": False, "error": error}
                 continue
 
-            raw_data = report.get("data")
-
-            parsed = parse_api_data(
-                raw_data,
-                group,
-            )
-
-            # Jika collector menyatakan sukses tetapi JSON tidak menghasilkan
-            # data sama sekali, jangan hapus cache lama secara otomatis.
+            parsed = parse_api_data(report.get("data"), group)
             if not parsed:
-                error = "Collector mendapat response, tetapi tidak ada slot yang dapat diparse."
-
+                error = (
+                    "Collector mendapat response, tetapi tidak ada slot yang dapat diparse."
+                )
                 with STATE_LOCK:
                     meta = RUNTIME_STATE["groups"][group]
                     meta["status"] = "cached" if dashboard_by_group[group] else "error"
                     meta["error"] = error
 
-                result_summary[group] = {
-                    "ok": False,
-                    "error": error,
-                }
-
+                result_summary[group] = {"ok": False, "error": error}
                 continue
 
             for item in parsed:
@@ -535,22 +536,11 @@ class MonitorService:
                             old_stock,
                             item["stock"],
                         )
-
-                        add_restock_log(
-                            item,
-                            old_stock,
-                            item["stock"],
-                        )
-
-                        broadcast_restock(
-                            item,
-                            old_stock,
-                        )
-
+                        add_restock_log(item, old_stock, item["stock"])
+                        broadcast_restock(item, old_stock)
                         restock_count += 1
 
                 upsert_event_state(item)
-
                 self.prev_state[uid] = {
                     "uid": uid,
                     "group_name": item["group"],
@@ -571,44 +561,27 @@ class MonitorService:
                 meta["error"] = None
                 meta["retry_in"] = 0
 
-            result_summary[group] = {
-                "ok": True,
-                "slots": len(parsed),
-            }
+            result_summary[group] = {"ok": True, "slots": len(parsed)}
 
         combined = []
-
         for group in GROUP_NAMES:
             combined.extend(dashboard_by_group[group])
 
         with STATE_LOCK:
             RUNTIME_STATE["members"] = combined
-
             successes = [
                 meta.get("last_success")
                 for meta in RUNTIME_STATE["groups"].values()
                 if meta.get("last_success")
             ]
-
-            RUNTIME_STATE["last_success"] = (
-                max(successes)
-                if successes
-                else None
-            )
+            RUNTIME_STATE["last_success"] = max(successes) if successes else None
 
             errors = []
-
             for group, meta in RUNTIME_STATE["groups"].items():
                 if meta.get("status") != "live" and meta.get("error"):
-                    errors.append(
-                        f"{group}: {meta['error']}"
-                    )
+                    errors.append(f"{group}: {meta['error']}")
 
-            RUNTIME_STATE["last_error"] = (
-                " | ".join(errors)
-                if errors
-                else None
-            )
+            RUNTIME_STATE["last_error"] = " | ".join(errors) if errors else None
 
         log.info(
             "Snapshot collector diterima. result=%s restocks=%s",
@@ -626,15 +599,11 @@ class MonitorService:
     def _mark_stale_if_needed(self):
         state = snapshot()
         last_seen = _parse_iso(state.get("collector_last_seen"))
-
         if last_seen is None:
             return
 
         now = datetime.now(last_seen.tzinfo or timezone.utc)
-
-        age = (
-            now - last_seen
-        ).total_seconds()
+        age = (now - last_seen).total_seconds()
 
         if age <= settings.collector_stale_after:
             return
@@ -642,70 +611,49 @@ class MonitorService:
         with STATE_LOCK:
             for group in GROUP_NAMES:
                 meta = RUNTIME_STATE["groups"][group]
-
                 if meta["status"] == "live":
                     meta["status"] = "cached"
                     meta["error"] = (
-                        f"Local collector belum mengirim update selama "
-                        f"{int(age)} detik."
+                        f"Local collector belum mengirim update selama {int(age)} detik."
                     )
 
             RUNTIME_STATE["last_error"] = (
-                f"Local collector tidak mengirim snapshot terbaru "
-                f"selama {int(age)} detik."
+                f"Local collector tidak mengirim snapshot terbaru selama {int(age)} detik."
             )
 
     def run(self):
         with STATE_LOCK:
             RUNTIME_STATE["running"] = True
 
-        log.info(
-            "Monitor Deplexo aktif dalam mode LOCAL COLLECTOR."
-        )
+        log.info("Monitor Deplexo aktif dalam mode LOCAL COLLECTOR.")
 
         try:
             while not self.stop_event.is_set():
                 try:
                     self._mark_stale_if_needed()
                     self.maybe_send_scheduled_report()
-
                 except Exception as exc:
                     log.exception("Monitor loop error")
-
                     with STATE_LOCK:
-                        RUNTIME_STATE["last_error"] = (
-                            f"{type(exc).__name__}: {exc}"
-                        )
+                        RUNTIME_STATE["last_error"] = f"{type(exc).__name__}: {exc}"
 
                 self.stop_event.wait(5)
-
         finally:
             with STATE_LOCK:
                 RUNTIME_STATE["running"] = False
 
     def maybe_send_scheduled_report(self):
         now = _jakarta_now()
-
-        if now.hour not in (
-            8,
-            12,
-            20,
-        ):
+        if now.hour not in (8, 12, 20):
             return
-
         if now.minute >= 5:
             return
 
-        schedule_key = (
-            f"{now.date().isoformat()}-"
-            f"{now.hour}"
-        )
-
+        schedule_key = f"{now.date().isoformat()}-{now.hour}"
         if self.last_schedule_key == schedule_key:
             return
 
         state = snapshot()
-
         if not state["members"]:
             return
 
@@ -714,10 +662,5 @@ class MonitorService:
             now.hour,
             group_meta=state["groups"],
         )
-
         self.last_schedule_key = schedule_key
-
-        log.info(
-            "Scheduled report %02d:00 WIB terkirim.",
-            now.hour,
-        )
+        log.info("Scheduled report %02d:00 WIB terkirim.", now.hour)
