@@ -17,6 +17,10 @@ from .db import (
 from .security import decrypt_webhook
 
 
+# ============================================================
+# LOGGING
+# ============================================================
+
 log = logging.getLogger("48group.monitor")
 
 
@@ -27,17 +31,30 @@ log = logging.getLogger("48group.monitor")
 EVENTS = [
     {
         "group": "JKT48",
-        "api_url": "https://jkt48.com/api/v1/exclusives/EX5B99/bonus?lang=id",
-        "buy_url": "https://jkt48.com/purchase/exclusive?code=EX5B99",
+        "api_url": (
+            "https://jkt48.com/api/v1/exclusives/"
+            "EX5B99/bonus?lang=id"
+        ),
+        "buy_url": (
+            "https://jkt48.com/purchase/"
+            "exclusive?code=EX5B99"
+        ),
     },
     {
         "group": "AKB48",
-        "api_url": "https://jkt48.com/api/v1/exclusives/EXD1A1/bonus?lang=id",
-        "buy_url": "https://jkt48.com/purchase/exclusive?code=EXD1A1",
+        "api_url": (
+            "https://jkt48.com/api/v1/exclusives/"
+            "EXD1A1/bonus?lang=id"
+        ),
+        "buy_url": (
+            "https://jkt48.com/purchase/"
+            "exclusive?code=EXD1A1"
+        ),
     },
 ]
 
-EVENT_BY_GROUP = {
+
+EVENT_MAP = {
     event["group"]: event
     for event in EVENTS
 }
@@ -69,322 +86,189 @@ RUNTIME_STATE = {
 
 
 # ============================================================
-# API HELPERS
+# FETCH API
 # ============================================================
-
-def response_preview(response, limit=300):
-    try:
-        text = response.text or ""
-
-        return (
-            text[:limit]
-            .replace("\n", " ")
-            .replace("\r", " ")
-        )
-
-    except Exception:
-        return ""
-
 
 def fetch_api(url: str):
     """
-    Urutan request:
+    Hanya melakukan SATU request per endpoint.
 
-    1. curl_cffi langsung
-    2. curl_cffi Session + membuka homepage
-    3. requests biasa sebagai fallback
+    Ini penting supaya ketika server memberikan 403/429,
+    monitor tidak memperparah rate-limit / anti-bot protection.
 
     Return:
-        (data_json, None) jika berhasil
-        (None, error_message) jika gagal
+        data
+        error
+        status_code
+        retry_after
     """
 
-    errors = []
+    try:
 
-    # ========================================================
-    # METHOD 1
-    # curl_cffi langsung
-    # Ini metode yang sebelumnya berhasil di bot lama.
-    # ========================================================
+        log.info(
+            "GET %s",
+            url,
+        )
 
-    for attempt in range(1, 3):
+        response = cffi_requests.get(
+            url,
+            impersonate="chrome",
+            timeout=20,
+        )
 
-        try:
 
-            log.info(
-                "API direct attempt=%s | %s",
-                attempt,
-                url,
-            )
+        status_code = response.status_code
 
-            response = cffi_requests.get(
-                url,
-                impersonate="chrome",
-                timeout=20,
-            )
 
-            log.info(
-                "API direct status=%s",
-                response.status_code,
-            )
+        log.info(
+            "API HTTP %s | %s",
+            status_code,
+            url,
+        )
 
-            if response.status_code == 200:
 
-                try:
+        # ====================================================
+        # SUCCESS
+        # ====================================================
 
-                    data = response.json()
+        if status_code == 200:
 
-                    return data, None
+            try:
 
-                except Exception as exc:
+                data = response.json()
 
-                    error = (
-                        "HTTP 200 tetapi JSON invalid: "
+                return (
+                    data,
+                    None,
+                    200,
+                    None,
+                )
+
+            except Exception as exc:
+
+                return (
+                    None,
+                    (
+                        "Response HTTP 200 "
+                        "tetapi JSON tidak valid: "
                         f"{type(exc).__name__}: {exc}"
+                    ),
+                    200,
+                    None,
+                )
+
+
+        # ====================================================
+        # RATE LIMIT
+        # ====================================================
+
+        if status_code == 429:
+
+            retry_after = 120
+
+            try:
+
+                header_retry = (
+                    response.headers.get(
+                        "Retry-After"
+                    )
+                )
+
+                if header_retry:
+
+                    retry_after = max(
+                        60,
+                        int(float(header_retry)),
                     )
 
-                    log.error(error)
+            except Exception:
+                pass
 
-                    return None, error
 
-
-            error = (
-                f"direct HTTP "
-                f"{response.status_code}; "
-                f"response="
-                f"{response_preview(response)}"
+            return (
+                None,
+                (
+                    "HTTP 429 - server melakukan "
+                    "rate limit"
+                ),
+                429,
+                retry_after,
             )
 
-            errors.append(error)
 
-            log.warning(error)
+        # ====================================================
+        # CLOUDFLARE / FORBIDDEN
+        # ====================================================
 
+        if status_code == 403:
 
-        except Exception as exc:
-
-            error = (
-                f"direct "
-                f"{type(exc).__name__}: "
-                f"{exc}"
+            log.warning(
+                "HTTP 403 anti-bot/protection "
+                "terdeteksi untuk %s",
+                url,
             )
 
-            errors.append(error)
+            return (
+                None,
+                (
+                    "HTTP 403 - endpoint sementara "
+                    "menolak request otomatis"
+                ),
+                403,
+                300,
+            )
 
-            log.warning(error)
 
+        # ====================================================
+        # OTHER HTTP ERROR
+        # ====================================================
 
-        if attempt < 2:
-            time.sleep(1)
-
-
-    # ========================================================
-    # METHOD 2
-    # Browser session + homepage warm-up
-    # ========================================================
-
-    try:
-
-        log.info(
-            "Mencoba curl_cffi browser session..."
-        )
-
-        session = cffi_requests.Session(
-            impersonate="chrome"
-        )
-
+        preview = ""
 
         try:
 
-            home = session.get(
-                "https://jkt48.com/",
-                timeout=20,
+            preview = (
+                response.text[:120]
+                .replace("\n", " ")
+                .replace("\r", " ")
             )
 
-            log.info(
-                "Homepage status=%s",
-                home.status_code,
-            )
-
-        except Exception as exc:
-
-            log.warning(
-                "Homepage warm-up gagal: %s: %s",
-                type(exc).__name__,
-                exc,
-            )
+        except Exception:
+            pass
 
 
-        response = session.get(
-            url,
-            timeout=20,
-        )
-
-
-        log.info(
-            "API session status=%s",
-            response.status_code,
-        )
-
-
-        if response.status_code == 200:
-
-            try:
-
-                return (
-                    response.json(),
-                    None,
+        return (
+            None,
+            (
+                f"HTTP {status_code}"
+                + (
+                    f" - {preview}"
+                    if preview
+                    else ""
                 )
-
-            except Exception as exc:
-
-                error = (
-                    "Session mendapatkan HTTP 200 "
-                    "tetapi JSON invalid: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-                log.error(error)
-
-                return None, error
-
-
-        error = (
-            f"session HTTP "
-            f"{response.status_code}; "
-            f"response="
-            f"{response_preview(response)}"
+            ),
+            status_code,
+            60,
         )
-
-        errors.append(error)
-
-        log.warning(error)
 
 
     except Exception as exc:
 
-        error = (
-            f"session "
-            f"{type(exc).__name__}: "
-            f"{exc}"
+        log.warning(
+            "API exception %s: %s",
+            type(exc).__name__,
+            exc,
         )
 
-        errors.append(error)
-
-        log.warning(error)
-
-
-    # ========================================================
-    # METHOD 3
-    # Standard requests fallback
-    # ========================================================
-
-    try:
-
-        log.info(
-            "Mencoba requests fallback..."
+        return (
+            None,
+            (
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            ),
+            None,
+            30,
         )
-
-
-        response = requests.get(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 "
-                    "(Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/140.0.0.0 "
-                    "Safari/537.36"
-                ),
-                "Accept": (
-                    "application/json,"
-                    "text/plain,*/*"
-                ),
-                "Referer": (
-                    "https://jkt48.com/"
-                ),
-            },
-            timeout=20,
-        )
-
-
-        log.info(
-            "Requests fallback status=%s",
-            response.status_code,
-        )
-
-
-        if response.status_code == 200:
-
-            try:
-
-                return (
-                    response.json(),
-                    None,
-                )
-
-            except Exception as exc:
-
-                error = (
-                    "Fallback HTTP 200 "
-                    "tetapi JSON invalid: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-                log.error(error)
-
-                return None, error
-
-
-        error = (
-            f"fallback HTTP "
-            f"{response.status_code}; "
-            f"response="
-            f"{response_preview(response)}"
-        )
-
-        errors.append(error)
-
-        log.warning(error)
-
-
-    except Exception as exc:
-
-        error = (
-            f"fallback "
-            f"{type(exc).__name__}: "
-            f"{exc}"
-        )
-
-        errors.append(error)
-
-        log.warning(error)
-
-
-    # ========================================================
-    # TOTAL FAILURE
-    # ========================================================
-
-    final_error = " || ".join(errors)
-
-
-    if len(final_error) > 700:
-
-        final_error = (
-            final_error[:700]
-            + "..."
-        )
-
-
-    if not final_error:
-
-        final_error = "Unknown API error"
-
-
-    return (
-        None,
-        final_error,
-    )
 
 
 # ============================================================
@@ -393,8 +277,8 @@ def fetch_api(url: str):
 
 def parse_api_data(
     response_json,
-    group_name: str,
-    buy_url: str,
+    group_name,
+    buy_url,
 ):
 
     parsed_items = []
@@ -404,11 +288,6 @@ def parse_api_data(
         response_json,
         dict,
     ):
-
-        log.warning(
-            "%s response bukan object JSON.",
-            group_name,
-        )
 
         return parsed_items
 
@@ -424,11 +303,6 @@ def parse_api_data(
         list,
     ):
 
-        log.warning(
-            "%s field data bukan list.",
-            group_name,
-        )
-
         return parsed_items
 
 
@@ -438,6 +312,7 @@ def parse_api_data(
             session_obj,
             dict,
         ):
+
             continue
 
 
@@ -447,37 +322,39 @@ def parse_api_data(
         )
 
 
-        members = session_obj.get(
+        session_members = session_obj.get(
             "session_members",
             [],
         )
 
 
         if not isinstance(
-            members,
+            session_members,
             list,
         ):
+
             continue
 
 
-        for detail in members:
+        for detail in session_members:
 
             if not isinstance(
                 detail,
                 dict,
             ):
+
                 continue
-
-
-            track = detail.get(
-                "label",
-                "-",
-            )
 
 
             member_name = detail.get(
                 "member_name",
                 "Unknown",
+            )
+
+
+            track = detail.get(
+                "label",
+                "-",
             )
 
 
@@ -525,94 +402,12 @@ def parse_api_data(
 
 
 # ============================================================
-# GET ALL API DATA
-# ============================================================
-
-def get_all_members_data():
-
-    all_members = []
-
-    successful_groups = set()
-
-    errors = {}
-
-
-    for event in EVENTS:
-
-        group = event["group"]
-
-
-        log.info(
-            "================================"
-        )
-
-        log.info(
-            "Mengambil data %s...",
-            group,
-        )
-
-
-        data, error = fetch_api(
-            event["api_url"]
-        )
-
-
-        if data is None:
-
-            errors[group] = (
-                error
-                or "Fetch gagal"
-            )
-
-
-            log.error(
-                "%s gagal: %s",
-                group,
-                errors[group],
-            )
-
-
-            continue
-
-
-        parsed = parse_api_data(
-            data,
-            group,
-            event["buy_url"],
-        )
-
-
-        successful_groups.add(
-            group
-        )
-
-
-        all_members.extend(
-            parsed
-        )
-
-
-        log.info(
-            "%s BERHASIL: %s slot terbaca",
-            group,
-            len(parsed),
-        )
-
-
-    return (
-        all_members,
-        successful_groups,
-        errors,
-    )
-
-
-# ============================================================
-# DISCORD REQUEST
+# DISCORD
 # ============================================================
 
 def discord_post(
-    webhook_url: str,
-    payload: dict,
+    webhook_url,
+    payload,
 ):
 
     try:
@@ -620,7 +415,7 @@ def discord_post(
         response = requests.post(
             webhook_url,
             params={
-                "wait": "true"
+                "wait": "true",
             },
             json=payload,
             headers={
@@ -638,8 +433,7 @@ def discord_post(
 
         raise RuntimeError(
             "Gagal terhubung ke Discord: "
-            f"{type(exc).__name__}: "
-            f"{exc}"
+            f"{type(exc).__name__}: {exc}"
         ) from exc
 
 
@@ -651,7 +445,7 @@ def discord_post(
         raise RuntimeError(
             f"Discord HTTP "
             f"{response.status_code}: "
-            f"{response.text[:500]}"
+            f"{response.text[:300]}"
         )
 
 
@@ -663,10 +457,10 @@ def discord_post(
 # ============================================================
 
 def send_embed(
-    webhook_url: str,
-    title: str,
-    description: str,
-    color: int,
+    webhook_url,
+    title,
+    description,
+    color,
     content=None,
     fields=None,
 ):
@@ -695,7 +489,6 @@ def send_embed(
 
 
     payload = {
-
         "embeds": [
             embed
         ],
@@ -724,7 +517,7 @@ def send_embed(
 # ============================================================
 
 def send_activation_message(
-    webhook_url: str,
+    webhook_url,
 ):
 
     return send_embed(
@@ -736,16 +529,12 @@ def send_activation_message(
             "Webhook berhasil terhubung.\n\n"
 
             "• **Restock alert:** realtime\n"
-
             "• **Daily report:** "
             "08:00 / 12:00 / 20:00 WIB\n"
-
             "• **Monitoring:** "
-            "mengikuti pilihan grup "
-            "di dashboard\n\n"
+            "mengikuti pilihan di dashboard\n\n"
 
-            "Sistem monitoring "
-            "sekarang aktif."
+            "Sistem monitoring sekarang aktif."
         ),
 
         COLOR_GREEN,
@@ -757,19 +546,17 @@ def send_activation_message(
 # ============================================================
 
 def send_test_message(
-    webhook_url: str,
+    webhook_url,
 ):
 
     return send_embed(
-
         webhook_url,
 
         "🧪 TEST WEBHOOK BERHASIL",
 
         (
-            "Dashboard berhasil "
-            "mengirim pesan ke "
-            "channel Discord ini."
+            "Dashboard berhasil mengirim "
+            "pesan ke channel Discord ini."
         ),
 
         COLOR_GREEN,
@@ -777,12 +564,12 @@ def send_test_message(
 
 
 # ============================================================
-# BROADCAST RESTOCK
+# RESTOCK BROADCAST
 # ============================================================
 
 def broadcast_restock(
-    item: dict,
-    old_stock: int,
+    item,
+    old_stock,
 ):
 
     hooks = list_enabled_webhooks(
@@ -793,33 +580,20 @@ def broadcast_restock(
     if not hooks:
 
         log.info(
-            "Restock %s %s terdeteksi, "
-            "tetapi tidak ada webhook aktif.",
-            item["group"],
-            item["name"],
+            "Restock terdeteksi tetapi "
+            "tidak ada webhook aktif."
         )
 
         return
 
 
     description = (
-
-        f"> 🏢 **Grup:** "
-        f"`{item['group']}`\n"
-
-        f"> 👤 **Member:** "
-        f"`{item['name']}`\n"
-
-        f"> 🕒 **Sesi:** "
-        f"`{item['session']}`\n"
-
-        f"> 📍 **Jalur:** "
-        f"`{item['track']}`\n"
-
+        f"> 🏢 **Grup:** `{item['group']}`\n"
+        f"> 👤 **Member:** `{item['name']}`\n"
+        f"> 🕒 **Sesi:** `{item['session']}`\n"
+        f"> 📍 **Jalur:** `{item['track']}`\n"
         f"> 📦 **Stok:** "
-        f"`{old_stock} → "
-        f"{item['stock']}`\n\n"
-
+        f"`{old_stock} → {item['stock']}`\n\n"
         f"👉 **[BELI TIKET 2-SHOT]"
         f"({item['buy_url']})**"
     )
@@ -869,7 +643,7 @@ def broadcast_restock(
 
             log.info(
                 "Restock dikirim "
-                "ke webhook id=%s",
+                "webhook id=%s",
                 hook["id"],
             )
 
@@ -878,13 +652,13 @@ def broadcast_restock(
 
             log.exception(
                 "Gagal mengirim restock "
-                "ke webhook id=%s",
+                "webhook id=%s",
                 hook["id"],
             )
 
 
 # ============================================================
-# FORMAT DAILY REPORT
+# FORMAT REPORT
 # ============================================================
 
 def available_group_text(
@@ -894,7 +668,6 @@ def available_group_text(
 ):
 
     available = [
-
         member
 
         for member in members
@@ -903,8 +676,7 @@ def available_group_text(
             member["group"]
             == group_name
 
-            and member["stock"]
-            > 0
+            and member["stock"] > 0
         )
     ]
 
@@ -912,39 +684,29 @@ def available_group_text(
     if not available:
 
         return (
-            "❌ Seluruh slot "
-            "sedang sold out."
+            "❌ Seluruh slot sedang sold out."
         )
 
 
     lines = []
 
 
-    for member in available[
-        :limit
-    ]:
+    for member in available[:limit]:
 
         lines.append(
-
             f"• **{member['name']}** — "
-
             f"`{member['session']}` | "
-
             f"`{member['track']}` → "
-
             f"**{member['stock']}**"
         )
 
 
-    if len(
-        available
-    ) > limit:
+    if len(available) > limit:
 
         lines.append(
-
             f"…dan "
             f"{len(available) - limit} "
-            f"slot tersedia lainnya."
+            f"slot lainnya."
         )
 
 
@@ -954,7 +716,7 @@ def available_group_text(
 
 
 # ============================================================
-# DAILY SCHEDULED REPORT
+# SCHEDULED REPORT
 # ============================================================
 
 def send_scheduled_report(
@@ -962,9 +724,7 @@ def send_scheduled_report(
     report_hour,
 ):
 
-    hooks = (
-        list_enabled_webhooks()
-    )
+    hooks = list_enabled_webhooks()
 
 
     if not hooks:
@@ -1040,7 +800,6 @@ def send_scheduled_report(
 
 
             send_embed(
-
                 webhook_url,
 
                 (
@@ -1063,9 +822,8 @@ def send_scheduled_report(
         except Exception:
 
             log.exception(
-                "Gagal mengirim "
-                "scheduled report "
-                "ke webhook id=%s",
+                "Scheduled report gagal "
+                "webhook id=%s",
                 hook["id"],
             )
 
@@ -1079,7 +837,6 @@ def snapshot():
     with STATE_LOCK:
 
         return {
-
             "members":
             list(
                 RUNTIME_STATE[
@@ -1123,6 +880,15 @@ class MonitorService:
 
         self.thread = None
 
+
+        # Waktu berikutnya sebuah group
+        # boleh melakukan request.
+        self.next_request_time = {
+            "JKT48": 0,
+            "AKB48": 0,
+        }
+
+
         self.last_schedule_key = None
 
 
@@ -1136,47 +902,37 @@ class MonitorService:
 
             log.exception(
                 "Gagal membaca "
-                "event_state database."
+                "state database."
             )
 
             self.prev_state = {}
 
 
-        self.restore_runtime_from_database()
+        self.restore_cached_data()
 
 
     # ========================================================
-    # RESTORE DB CACHE
+    # RESTORE DATABASE
     # ========================================================
 
-    def restore_runtime_from_database(
-        self,
-    ):
-
-        if not self.prev_state:
-
-            return
-
+    def restore_cached_data(self):
 
         restored = []
 
 
-        for (
-            uid,
-            row,
-        ) in self.prev_state.items():
+        for uid, row in (
+            self.prev_state.items()
+        ):
 
             try:
 
-                group_name = row[
+                group = row[
                     "group_name"
                 ]
 
 
-                event = (
-                    EVENT_BY_GROUP.get(
-                        group_name
-                    )
+                event = EVENT_MAP.get(
+                    group
                 )
 
 
@@ -1193,9 +949,7 @@ class MonitorService:
                 restored.append(
                     {
                         "id": uid,
-
-                        "group":
-                        group_name,
+                        "group": group,
 
                         "name":
                         row[
@@ -1241,8 +995,8 @@ class MonitorService:
 
 
             log.info(
-                "Memulihkan %s slot "
-                "dari database.",
+                "Cache database dipulihkan: "
+                "%s slot.",
                 len(restored),
             )
 
@@ -1265,11 +1019,8 @@ class MonitorService:
 
 
         self.thread = threading.Thread(
-
             target=self.run,
-
             daemon=True,
-
             name="48group-monitor",
         )
 
@@ -1294,7 +1045,7 @@ class MonitorService:
 
 
     # ========================================================
-    # MAIN LOOP
+    # LOOP
     # ========================================================
 
     def run(self):
@@ -1307,8 +1058,8 @@ class MonitorService:
 
 
         log.info(
-            "Monitor dimulai; "
-            "interval=%ss",
+            "Monitor aktif. "
+            "Base interval=%s detik.",
             settings.check_interval,
         )
 
@@ -1329,7 +1080,7 @@ class MonitorService:
                 except Exception as exc:
 
                     log.exception(
-                        "Monitor loop error"
+                        "Monitor loop error."
                     )
 
 
@@ -1338,7 +1089,6 @@ class MonitorService:
                         RUNTIME_STATE[
                             "last_error"
                         ] = (
-
                             f"{type(exc).__name__}: "
                             f"{exc}"
                         )
@@ -1359,202 +1109,205 @@ class MonitorService:
 
 
     # ========================================================
-    # POLL API
+    # POLL
     # ========================================================
 
     def poll_once(self):
 
-        now = datetime.now(
-
+        jakarta_now = datetime.now(
             ZoneInfo(
                 settings.timezone
             )
         )
 
 
+        current_timestamp = time.time()
+
+
         with STATE_LOCK:
 
             RUNTIME_STATE[
                 "last_check"
-            ] = now.isoformat()
-
-
-        (
-            fetched_members,
-            successful_groups,
-            errors,
-        ) = get_all_members_data()
-
-
-        # ====================================================
-        # SEMUA API GAGAL
-        # ====================================================
-
-        if not successful_groups:
-
-            error_parts = []
-
-
-            for group in (
-                "JKT48",
-                "AKB48",
-            ):
-
-                if group in errors:
-
-                    error_parts.append(
-                        f"{group}: "
-                        f"{errors[group]}"
-                    )
-
-
-            error_text = (
-                "Semua endpoint API "
-                "gagal diakses."
+            ] = (
+                jakarta_now.isoformat()
             )
 
 
-            if error_parts:
-
-                error_text += (
-                    " "
-                    + " | ".join(
-                        error_parts
-                    )
-                )
-
-
-            if len(
-                error_text
-            ) > 900:
-
-                error_text = (
-                    error_text[:900]
-                    + "..."
-                )
-
-
-            with STATE_LOCK:
-
-                RUNTIME_STATE[
-                    "last_error"
-                ] = error_text
-
-
-            log.error(
-                error_text
-            )
-
-
-            return
-
-
-        # ====================================================
-        # AMBIL RUNTIME DATA LAMA
-        # ====================================================
-
-        with STATE_LOCK:
-
-            old_runtime_members = list(
-
+            previous_runtime = list(
                 RUNTIME_STATE[
                     "members"
                 ]
             )
 
 
-        # ====================================================
-        # JIKA SALAH SATU API GAGAL,
-        # PERTAHANKAN DATA TERAKHIR GRUP TERSEBUT
-        # ====================================================
+        # Data dashboard lama.
+        dashboard_by_group = {
+            "JKT48": [
+                member
+                for member
+                in previous_runtime
+                if member["group"]
+                == "JKT48"
+            ],
 
-        preserved_members = [
-
-            member
-
-            for member
-            in old_runtime_members
-
-            if member["group"]
-            not in successful_groups
-        ]
-
-
-        members_for_dashboard = (
-
-            fetched_members
-            + preserved_members
-        )
-
-
-        fetched_state = {
-
-            item["id"]: item
-
-            for item
-            in fetched_members
+            "AKB48": [
+                member
+                for member
+                in previous_runtime
+                if member["group"]
+                == "AKB48"
+            ],
         }
 
 
+        successful_groups = []
+
+        problems = []
+
+
         # ====================================================
-        # BASELINE PERTAMA
+        # LOOP GROUP
         # ====================================================
 
-        if not self.prev_state:
+        for event in EVENTS:
 
-            log.info(
-                "Membuat baseline awal "
-                "%s slot.",
-                len(fetched_members),
+            group = event["group"]
+
+
+            # ================================================
+            # COOLDOWN
+            # ================================================
+
+            next_allowed = (
+                self.next_request_time.get(
+                    group,
+                    0,
+                )
             )
 
 
-            for item in fetched_members:
+            if (
+                current_timestamp
+                < next_allowed
+            ):
 
-                upsert_event_state(
-                    item
+                remaining = int(
+                    next_allowed
+                    - current_timestamp
                 )
 
 
-            self.prev_state = {}
+                log.info(
+                    "%s cooldown, "
+                    "%ss tersisa.",
+                    group,
+                    remaining,
+                )
 
 
-            for item in fetched_members:
-
-                self.prev_state[
-                    item["id"]
-                ] = {
-
-                    "uid":
-                    item["id"],
-
-                    "group_name":
-                    item["group"],
-
-                    "member_name":
-                    item["name"],
-
-                    "session_name":
-                    item["session"],
-
-                    "track_name":
-                    item["track"],
-
-                    "stock":
-                    item["stock"],
-                }
+                continue
 
 
-        else:
+            # ================================================
+            # REQUEST
+            # ================================================
 
-            # =================================================
-            # COMPARE STOCK
-            # =================================================
+            (
+                data,
+                error,
+                status_code,
+                retry_after,
+            ) = fetch_api(
+                event["api_url"]
+            )
 
-            for (
-                uid,
-                item,
-            ) in fetched_state.items():
+
+            # ================================================
+            # FAILURE
+            # ================================================
+
+            if data is None:
+
+                cooldown = (
+                    retry_after
+                    if retry_after
+                    else 30
+                )
+
+
+                self.next_request_time[
+                    group
+                ] = (
+                    current_timestamp
+                    + cooldown
+                )
+
+
+                problem = (
+                    f"{group}: {error}"
+                )
+
+
+                problems.append(
+                    problem
+                )
+
+
+                log.warning(
+                    "%s gagal. "
+                    "Cooldown %ss. "
+                    "Reason: %s",
+                    group,
+                    cooldown,
+                    error,
+                )
+
+
+                continue
+
+
+            # ================================================
+            # SUCCESS
+            # ================================================
+
+            self.next_request_time[
+                group
+            ] = 0
+
+
+            parsed = parse_api_data(
+                data,
+                group,
+                event["buy_url"],
+            )
+
+
+            dashboard_by_group[
+                group
+            ] = parsed
+
+
+            successful_groups.append(
+                group
+            )
+
+
+            log.info(
+                "%s BERHASIL - "
+                "%s slot.",
+                group,
+                len(parsed),
+            )
+
+
+            # ================================================
+            # CHECK RESTOCK
+            # ================================================
+
+            for item in parsed:
+
+                uid = item["id"]
+
 
                 previous = (
                     self.prev_state.get(
@@ -1579,13 +1332,6 @@ class MonitorService:
                         old_stock = 0
 
 
-                    # =========================================
-                    # RESTOCK
-                    #
-                    # SEBELUMNYA 0
-                    # SEKARANG > 0
-                    # =========================================
-
                     if (
                         old_stock <= 0
 
@@ -1595,8 +1341,7 @@ class MonitorService:
                     ):
 
                         log.warning(
-
-                            "RESTOCK: "
+                            "RESTOCK >>> "
                             "%s | %s | "
                             "%s | %s | "
                             "%s -> %s",
@@ -1638,7 +1383,10 @@ class MonitorService:
                         )
 
 
-                # Simpan state terbaru
+                # ============================================
+                # SAVE DATABASE
+                # ============================================
+
                 upsert_event_state(
                     item
                 )
@@ -1647,9 +1395,8 @@ class MonitorService:
                 self.prev_state[
                     uid
                 ] = {
-
                     "uid":
-                    item["id"],
+                    uid,
 
                     "group_name":
                     item["group"],
@@ -1672,97 +1419,58 @@ class MonitorService:
         # UPDATE DASHBOARD
         # ====================================================
 
+        combined_members = (
+            dashboard_by_group[
+                "JKT48"
+            ]
+            +
+            dashboard_by_group[
+                "AKB48"
+            ]
+        )
+
+
         with STATE_LOCK:
 
             RUNTIME_STATE[
                 "members"
-            ] = (
-                members_for_dashboard
-            )
+            ] = combined_members
 
 
-            RUNTIME_STATE[
-                "last_success"
-            ] = now.isoformat()
+            if successful_groups:
+
+                RUNTIME_STATE[
+                    "last_success"
+                ] = (
+                    jakarta_now.isoformat()
+                )
 
 
-            if len(
-                successful_groups
-            ) == len(EVENTS):
+            if problems:
+
+                RUNTIME_STATE[
+                    "last_error"
+                ] = (
+                    "Sebagian API bermasalah. "
+                    + " | ".join(
+                        problems
+                    )
+                )
+
+
+            elif successful_groups:
 
                 RUNTIME_STATE[
                     "last_error"
                 ] = None
 
 
-            else:
-
-                failed_groups = [
-
-                    event["group"]
-
-                    for event
-                    in EVENTS
-
-                    if event["group"]
-                    not in successful_groups
-                ]
-
-
-                details = []
-
-
-                for group in failed_groups:
-
-                    if group in errors:
-
-                        details.append(
-
-                            f"{group}: "
-                            f"{errors[group]}"
-                        )
-
-
-                partial_error = (
-
-                    "Sebagian API gagal. "
-
-                    + " | ".join(
-                        details
-                    )
-                )
-
-
-                if len(
-                    partial_error
-                ) > 900:
-
-                    partial_error = (
-
-                        partial_error[:900]
-                        + "..."
-                    )
-
-
-                RUNTIME_STATE[
-                    "last_error"
-                ] = (
-                    partial_error
-                )
-
-
         log.info(
-            "API update selesai. "
+            "Polling selesai. "
             "success=%s "
-            "total_dashboard=%s",
-
-            sorted(
-                successful_groups
-            ),
-
-            len(
-                members_for_dashboard
-            ),
+            "dashboard=%s slot.",
+            successful_groups,
+            len(combined_members),
         )
 
 
@@ -1775,14 +1483,12 @@ class MonitorService:
     ):
 
         now = datetime.now(
-
             ZoneInfo(
                 settings.timezone
             )
         )
 
 
-        # Hanya jam ini
         if now.hour not in (
             8,
             12,
@@ -1792,20 +1498,14 @@ class MonitorService:
             return
 
 
-        # Window 5 menit
-        #
-        # 08:00 - 08:04
-        # 12:00 - 12:04
-        # 20:00 - 20:04
-        #
-        # Berguna kalau polling sedikit terlambat.
+        # Report boleh terkirim
+        # pada menit 00 - 04.
         if now.minute >= 5:
 
             return
 
 
         schedule_key = (
-
             f"{now.date().isoformat()}"
             f"-{now.hour}"
         )
