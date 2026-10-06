@@ -2,233 +2,332 @@
 {% block title %}Dashboard • 48Group Monitor{% endblock %}
 {% block content %}
 <style>
-  .api-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em}
-  .api-live{background:#0f2c21;color:#86efac}.api-cached{background:#30270f;color:#fde68a}.api-error{background:#35161b;color:#fda4af}
-  .group-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;font-size:12px;color:#a1a1aa}.group-meta b{color:#e4e4e7}
-  .api-note{margin-top:10px;font-size:12px;color:#a1a1aa;line-height:1.45}
-  .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;width:100%}.status-item{display:flex;flex-direction:column;gap:4px}
-  .api-summary{width:100%;margin-top:12px;padding-top:12px;border-top:1px solid #29292e;font-size:13px}.api-summary.good{color:#86efac}.api-summary.warn{color:#fbbf24}.api-summary.bad{color:#fda4af}
-  .feature-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:16px;margin:16px 0}
-  .snipe-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
-  .target-list{display:grid;gap:10px;margin-top:16px}.target-row{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:13px;border:1px solid #2b2b31;border-radius:13px;background:#111114}
-  .target-main{min-width:0}.target-main small{display:block;color:#8f8f99;margin-top:4px}.target-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .target-available{color:#86efac}.target-sold{color:#a1a1aa}
-  .buy-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;border-radius:10px;padding:8px 11px;background:#16a34a;color:white;font-weight:800;font-size:12px;white-space:nowrap}
-  .buy-btn:hover{filter:brightness(1.08)}.buy-btn.secondary{background:#2563eb}.snipe-mark{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;background:#3a2d08;color:#fde68a;font-size:10px;font-weight:800;margin-left:6px}
-  .timeline-item{align-items:flex-start}.timeline-content{flex:1;min-width:0}.timeline-action{margin-left:auto}
-  .slot-member{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-  select{width:100%;background:#0d0d10;border:1px solid #34343a;color:white;padding:11px 12px;border-radius:10px;outline:none}
-  select:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,.15)}
-  @media(max-width:900px){.feature-grid{grid-template-columns:1fr}.snipe-form{grid-template-columns:1fr}.target-row{align-items:flex-start;flex-direction:column}}
-  @media(max-width:760px){.status-grid{grid-template-columns:1fr}.group-meta{gap:8px}}
+  .v2-shell{display:grid;gap:18px}
+  .v2-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:4px 0 2px}
+  .v2-kicker{font-size:10px;font-weight:900;letter-spacing:.16em;color:#a78bfa}
+  .v2-hero h1{margin:5px 0 6px;font-size:30px}
+  .v2-sub{color:#9ca3af;font-size:13px}
+  .v2-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .v2-live{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;background:#0f2c21;color:#86efac;font-size:11px;font-weight:900}
+  .v2-grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .v2-metric{padding:16px;border:1px solid #292930;border-radius:15px;background:linear-gradient(145deg,#17171d,#111114)}
+  .v2-metric small{display:block;color:#8f8f99;margin-bottom:7px}
+  .v2-metric strong{font-size:27px}
+  .v2-metric span{color:#71717a;font-size:10px;margin-left:6px}
+  .v2-groups{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .v2-group{padding:17px;border:1px solid #292930;border-radius:16px;background:#141418}
+  .v2-group-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .v2-group-head h2{margin:0}
+  .v2-api{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;font-size:10px;font-weight:900}
+  .v2-api.live{background:#0f2c21;color:#86efac}
+  .v2-api.cached{background:#30270f;color:#fde68a}
+  .v2-api.error{background:#35161b;color:#fda4af}
+  .v2-stat3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}
+  .v2-stat3 div{padding:12px;border:1px solid #27272d;border-radius:11px;background:#0e0e12}
+  .v2-stat3 strong{display:block;font-size:20px}
+  .v2-stat3 span{font-size:10px;color:#8f8f99}
+  .v2-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:11px;color:#8f8f99;font-size:11px}
+  .v2-main{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(320px,.82fr);gap:14px}
+  .v2-card{padding:18px;border:1px solid #292930;border-radius:16px;background:#141418}
+  .v2-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+  .v2-head h2{margin:2px 0 4px}
+  .v2-head p{margin:0;color:#8f8f99;font-size:12px}
+  .v2-label{font-size:9px;font-weight:900;letter-spacing:.13em;color:#a78bfa;text-transform:uppercase}
+  .v2-searchrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
+  .v2-picker{position:relative}
+  .v2-input{width:100%;box-sizing:border-box;background:#0d0d10;border:1px solid #34343a;color:#fff;padding:11px 12px;border-radius:10px;outline:none}
+  .v2-input:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,.15)}
+  .v2-results{display:none;position:absolute;z-index:30;left:0;right:0;top:calc(100% + 6px);max-height:270px;overflow:auto;background:#111116;border:1px solid #34343a;border-radius:12px;box-shadow:0 18px 45px rgba(0,0,0,.45)}
+  .v2-opt{display:flex;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;border:0;background:none;color:#fff;text-align:left;cursor:pointer}
+  .v2-opt:hover{background:#1b1b22}
+  .v2-opt small{color:#8f8f99}
+  .v2-targets{display:grid;gap:9px;margin-top:14px}
+  .v2-target{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid #292930;border-radius:12px;background:#0e0e12}
+  .v2-target small{display:block;color:#8f8f99;margin-top:3px}
+  .v2-target .available{color:#86efac}
+  .v2-target-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .v2-buy{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:8px 11px;border-radius:9px;background:#16a34a;color:#fff;font-weight:900;font-size:11px;white-space:nowrap}
+  .v2-buy.blue{background:#2563eb}
+  .v2-targetmark{display:inline-flex;padding:3px 6px;border-radius:999px;background:#3a2d08;color:#fde68a;font-size:9px;font-weight:900;margin-left:5px}
+  .v2-status{display:grid}
+  .v2-status-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #25252b;font-size:11px}
+  .v2-status-row:last-child{border-bottom:0}
+  .v2-status-row span{color:#8f8f99}
+  .v2-status-row b{text-align:right}
+  .v2-note{margin-top:12px;padding:10px 11px;border-radius:10px;font-size:11px}
+  .v2-good{background:#0f2c21;color:#86efac}
+  .v2-warn{background:#30270f;color:#fde68a}
+  .v2-bad{background:#35161b;color:#fda4af}
+  .v2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .v2-toolbar .v2-input{max-width:310px}
+  .v2-tablewrap{overflow:auto}
+  .v2-table{width:100%;border-collapse:collapse}
+  .v2-table th,.v2-table td{padding:11px 9px;border-bottom:1px solid #26262c;text-align:left;font-size:11px}
+  .v2-table th{color:#8f8f99;font-size:9px;text-transform:uppercase;letter-spacing:.06em}
+  .v2-pill{display:inline-flex;padding:4px 7px;border-radius:999px;background:#24242a;color:#d4d4d8;font-size:9px;font-weight:800}
+  .v2-timeline{display:grid;gap:8px}
+  .v2-restock{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid #28282e;border-radius:11px;background:#0e0e12}
+  .v2-restock-main{flex:1;min-width:0}
+  .v2-restock-main small{display:block;color:#8f8f99;margin-top:3px}
+  .v2-bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .v2-webform{display:grid;gap:10px}
+  .v2-checks{display:flex;gap:14px;flex-wrap:wrap}
+  .v2-hooks{display:grid;gap:8px;margin-top:14px}
+  .v2-hook{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px;border:1px solid #292930;border-radius:11px;background:#0e0e12}
+  .v2-hook small{display:block;color:#8f8f99;margin-top:3px}
+  .v2-rowactions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  @media(max-width:980px){
+    .v2-grid4{grid-template-columns:1fr 1fr}
+    .v2-main,.v2-bottom{grid-template-columns:1fr}
+  }
+  @media(max-width:720px){
+    .v2-hero{flex-direction:column}
+    .v2-groups{grid-template-columns:1fr}
+    .v2-searchrow{grid-template-columns:1fr}
+    .v2-target,.v2-hook{align-items:flex-start;flex-direction:column}
+  }
 </style>
 
 {% set jkt_api = state["groups"]["JKT48"] %}
 {% set akb_api = state["groups"]["AKB48"] %}
 
-<header class="topbar">
-  <div><div class="eyebrow">48GROUP</div><h1>2-Shot Monitor</h1></div>
-  <div class="top-actions">
-    <span class="pill {% if state.running %}ok{% else %}bad{% endif %}">{% if state.running %}● MONITOR ON{% else %}● STOPPED{% endif %}</span>
-    <span class="muted">@{{ user.username }}</span>
-    <form method="post" action="/logout"><button class="ghost">Keluar</button></form>
-  </div>
-</header>
-
-{% if message %}<div class="alert success">{{ message }}</div>{% endif %}
-{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
-
-<section class="grid two">
-  <article class="card">
-    <div class="card-head"><h2>JKT48</h2><span class="api-badge api-{{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span></div>
-    <div class="stats">
-      <div><strong>{{ jkt.available }}</strong><span>Tersedia</span></div>
-      <div><strong>{{ jkt.sold_out }}</strong><span>Sold out</span></div>
-      <div><strong>{{ jkt.total }}</strong><span>Total slot</span></div>
+<div class="v2-shell">
+  <header class="v2-hero">
+    <div>
+      <div class="v2-kicker">48GROUP • 2-SHOT CONTROL CENTER</div>
+      <h1>2-Shot Monitor</h1>
+      <div class="v2-sub">Availability, sniping target, restock, dan Discord notification dalam satu dashboard.</div>
     </div>
-    <div class="group-meta">
-      <span>Origin HTTP <b>{{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></span>
-      <span>Last live <b>{{ jkt_api.last_success or "Belum ada" }}</b></span>
+    <div class="v2-actions">
+      <span class="v2-live">{% if state.running %}● MONITOR ON{% else %}● STOPPED{% endif %}</span>
+      <span class="muted">@{{ user.username }}</span>
+      <form method="post" action="/logout"><button class="ghost">Keluar</button></form>
     </div>
-    {% if jkt_api.status != "live" %}<div class="api-note">Menampilkan cache terakhir. {{ jkt_api.error or "" }}</div>{% endif %}
-  </article>
+  </header>
 
-  <article class="card">
-    <div class="card-head"><h2>AKB48</h2><span class="api-badge api-{{ akb_api.status }}">● {{ akb_api.status|upper }}</span></div>
-    <div class="stats">
-      <div><strong>{{ akb.available }}</strong><span>Tersedia</span></div>
-      <div><strong>{{ akb.sold_out }}</strong><span>Sold out</span></div>
-      <div><strong>{{ akb.total }}</strong><span>Total slot</span></div>
-    </div>
-    <div class="group-meta">
-      <span>Origin HTTP <b>{{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></span>
-      <span>Last live <b>{{ akb_api.last_success or "Belum ada" }}</b></span>
-    </div>
-    {% if akb_api.status != "live" %}<div class="api-note">Menampilkan cache terakhir. {{ akb_api.error or "" }}</div>{% endif %}
-  </article>
-</section>
+  {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
 
-<section class="card statusbar">
-  <div class="status-grid">
-    <div class="status-item"><span class="muted">Last collector feed</span><b>{{ state.collector_last_seen or "Belum ada" }}</b></div>
-    <div class="status-item"><span class="muted">Last live data</span><b>{{ state.last_success or "Belum ada" }}</b></div>
-    <div class="status-item"><span class="muted">Schedule</span><b>08:00 • 12:00 • 20:00 WIB</b></div>
-  </div>
-  {% if jkt_api.status == "live" and akb_api.status == "live" %}
-    <div class="api-summary good">✓ Local collector terhubung. JKT48 dan AKB48 sedang LIVE. Restock dapat langsung dideteksi.</div>
-  {% elif jkt_api.status == "error" or akb_api.status == "error" %}
-    <div class="api-summary bad">Collector terhubung tetapi ada sumber data yang gagal, atau belum ada cache yang dapat digunakan.</div>
-  {% else %}
-    <div class="api-summary warn">⚠ Sebagian data menggunakan cache. Pastikan collector.py di PC lokal sedang berjalan.</div>
-  {% endif %}
-</section>
+  <section class="v2-grid4">
+    <div class="v2-metric"><small>Available Slots</small><strong>{{ available|length }}</strong><span>snapshot</span></div>
+    <div class="v2-metric"><small>Total Monitored</small><strong>{{ jkt.total + akb.total }}</strong><span>slot</span></div>
+    <div class="v2-metric"><small>Sniping Targets</small><strong>{{ sniping_targets|length }}</strong><span>member</span></div>
+    <div class="v2-metric"><small>Recent Restocks</small><strong>{{ restocks|length }}</strong><span>event</span></div>
+  </section>
 
-<section class="feature-grid">
-  <article class="card">
-    <div class="card-head">
-      <div>
-        <h2>🎯 Member Sniping</h2>
-        <p class="muted">Pilih member incaran. Saat member target restock, alert Discord untuk akun Anda akan diberi penanda khusus 🎯.</p>
+  <section class="v2-groups">
+    <article class="v2-group">
+      <div class="v2-group-head"><h2>JKT48</h2><span class="v2-api {{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span></div>
+      <div class="v2-stat3">
+        <div><strong>{{ jkt.available }}</strong><span>Tersedia</span></div>
+        <div><strong>{{ jkt.sold_out }}</strong><span>Sold out</span></div>
+        <div><strong>{{ jkt.total }}</strong><span>Total slot</span></div>
       </div>
-    </div>
+      <div class="v2-meta"><span>HTTP <b>{{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ jkt_api.last_success or "Belum ada" }}</b></span></div>
+    </article>
+    <article class="v2-group">
+      <div class="v2-group-head"><h2>AKB48</h2><span class="v2-api {{ akb_api.status }}">● {{ akb_api.status|upper }}</span></div>
+      <div class="v2-stat3">
+        <div><strong>{{ akb.available }}</strong><span>Tersedia</span></div>
+        <div><strong>{{ akb.sold_out }}</strong><span>Sold out</span></div>
+        <div><strong>{{ akb.total }}</strong><span>Total slot</span></div>
+      </div>
+      <div class="v2-meta"><span>HTTP <b>{{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ akb_api.last_success or "Belum ada" }}</b></span></div>
+    </article>
+  </section>
 
-    <form method="post" action="/sniping" class="snipe-form">
-      <label>
-        Pilih member target
-        <select name="target" required>
-          <option value="" selected disabled>-- Pilih member --</option>
-          <optgroup label="JKT48">
-            {% for group, name in member_options if group == "JKT48" %}
-              <option value="{{ group }}|{{ name }}">{{ name }}</option>
+  <section class="v2-main">
+    <article class="v2-card">
+      <div class="v2-head">
+        <div><div class="v2-label">Priority Watch</div><h2>🎯 Member Sniping</h2><p>Ketik nama member, pilih hasilnya, lalu tambahkan sebagai target.</p></div>
+      </div>
+      <form id="snipeForm" method="post" action="/sniping" class="v2-searchrow">
+        <div class="v2-picker">
+          <input id="memberSearch" class="v2-input" type="search" autocomplete="off" placeholder="Cari member JKT48 / AKB48...">
+          <input id="memberTarget" type="hidden" name="target" required>
+          <div id="memberResults" class="v2-results">
+            {% for group, name in member_options %}
+            <button type="button" class="v2-opt" data-value="{{ group }}|{{ name }}" data-search="{{ group|lower }} {{ name|lower }}">
+              <span>{{ name }}</span><small>{{ group }}</small>
+            </button>
             {% endfor %}
-          </optgroup>
-          <optgroup label="AKB48">
-            {% for group, name in member_options if group == "AKB48" %}
-              <option value="{{ group }}|{{ name }}">{{ name }}</option>
-            {% endfor %}
-          </optgroup>
-        </select>
-      </label>
-      <button class="primary" type="submit">+ Tambah Target</button>
-    </form>
+          </div>
+        </div>
+        <button class="primary" type="submit">+ Tambah Target</button>
+      </form>
 
-    <div class="target-list">
-      {% for t in sniping_targets %}
-      <div class="target-row">
-        <div class="target-main">
-          <b>🎯 {{ t.member_name }}</b>
-          <small>{{ t.group_name }}</small>
-          {% if t.is_available %}
-            <small class="target-available">● AVAILABLE • {{ t.available_slots }} slot • total stok {{ t.available_stock }}</small>
-          {% else %}
-            <small class="target-sold">● SOLD OUT / belum tersedia</small>
-          {% endif %}
+      <div class="v2-targets">
+        {% for t in sniping_targets %}
+        <div class="v2-target">
+          <div>
+            <b>🎯 {{ t.member_name }}</b>
+            <small>{{ t.group_name }}</small>
+            {% if t.is_available %}
+              <small class="available">● AVAILABLE • {{ t.available_slots }} slot • stok {{ t.available_stock }}</small>
+            {% else %}
+              <small>● WATCHING • belum tersedia</small>
+            {% endif %}
+          </div>
+          <div class="v2-target-actions">
+            {% if t.is_available %}<a class="v2-buy" href="{{ t.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a>{% endif %}
+            <form method="post" action="/sniping/{{ t.id }}/delete" onsubmit="return confirm('Hapus target sniping ini?')"><button class="danger" type="submit">Hapus</button></form>
+          </div>
         </div>
-        <div class="target-actions">
-          {% if t.is_available %}
-            <a class="buy-btn" href="{{ t.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a>
-          {% endif %}
-          <form method="post" action="/sniping/{{ t.id }}/delete" onsubmit="return confirm('Hapus target sniping ini?')">
-            <button class="danger" type="submit">Hapus</button>
-          </form>
-        </div>
-      </div>
-      {% else %}
-        <p class="empty">Belum ada member target. Pilih member dari daftar di atas.</p>
-      {% endfor %}
-    </div>
-  </article>
-
-  <article class="card">
-    <div class="card-head">
-      <div><h2>Recent Restocks</h2><p class="muted">Riwayat perubahan sold out → tersedia.</p></div>
-    </div>
-    <div class="timeline">
-      {% for r in restocks %}
-      <div class="timeline-item">
-        <span class="dot"></span>
-        <div class="timeline-content">
-          <b>{{ r.group_name }} • {{ r.member_name }}{% if r.is_target %}<span class="snipe-mark">🎯 TARGET</span>{% endif %}</b>
-          <small>{{ r.session_name }} • {{ r.track_name }} • {{ r.old_stock }} → {{ r.new_stock }}</small>
-          <small>{{ r.detected_at }}</small>
-        </div>
-        <div class="timeline-action">
-          <a class="buy-btn secondary" href="{{ r.buy_url }}" target="_blank" rel="noopener noreferrer">Beli</a>
-        </div>
-      </div>
-      {% else %}
-        <p class="empty">Belum ada restock terdeteksi sejak database dibuat.</p>
-      {% endfor %}
-    </div>
-  </article>
-</section>
-
-<section class="card">
-  <div class="card-head">
-    <div><h2>Slot Tersedia Sekarang</h2><p class="muted">{{ available|length }} slot pada snapshot terakhir. Tombol Beli membuka halaman pembelian resmi.</p></div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Group</th><th>Member</th><th>Sesi</th><th>Jalur</th><th>Stock</th><th>Aksi</th></tr></thead>
-      <tbody>
-        {% for m in available %}
-        <tr>
-          <td><span class="pill neutral">{{ m.group }}</span></td>
-          <td><div class="slot-member"><b>{{ m.name }}</b>{% if (m.group, m.name) in target_keys %}<span class="snipe-mark">🎯 TARGET</span>{% endif %}</div></td>
-          <td>{{ m.session }}</td>
-          <td>{{ m.track }}</td>
-          <td><b>{{ m.stock }}</b></td>
-          <td><a class="buy-btn" href="{{ m.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a></td>
-        </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">Belum ada slot tersedia / collector belum mengirim data.</td></tr>
+        <p class="empty">Belum ada target. Cari member di atas untuk mulai sniping.</p>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="grid dashboard-grid">
-  <article class="card">
-    <div class="card-head"><div><h2>Discord Webhooks</h2><p class="muted">Tambah sebanyak yang dibutuhkan. Restock langsung @everyone.</p></div></div>
-    <form action="/webhooks" method="post" class="webhook-form">
-      <label>Nama server/channel<input name="name" placeholder="Contoh: Server Utama #restock" required></label>
-      <label>Discord webhook URL<input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required></label>
-      <div class="checks">
-        <label><input type="checkbox" name="notify_jkt" checked> JKT48</label>
-        <label><input type="checkbox" name="notify_akb" checked> AKB48</label>
       </div>
-      <button class="primary" type="submit">Test & Aktifkan Webhook</button>
-    </form>
+    </article>
 
-    <div class="hook-list">
-      {% for h in webhooks %}
-      <div class="hook-row">
-        <div>
-          <b>{{ h.name }}</b><small>{{ h.masked_url }}</small>
-          <small>{% if h.notify_jkt %}JKT48{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small>
-        </div>
-        <div class="row-actions">
-          <span class="pill {% if h.enabled %}ok{% else %}bad{% endif %}">{% if h.enabled %}Active{% else %}Disabled{% endif %}</span>
-          <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>
-          <form method="post" action="/webhooks/{{ h.id }}/toggle"><button class="ghost">{% if h.enabled %}Disable{% else %}Enable{% endif %}</button></form>
-          <form method="post" action="/webhooks/{{ h.id }}/delete" onsubmit="return confirm('Hapus webhook ini?')"><button class="danger">Delete</button></form>
-        </div>
+    <aside class="v2-card">
+      <div class="v2-head"><div><div class="v2-label">Diagnostics</div><h2>System Status</h2><p>Status collector dan kedua sumber data.</p></div></div>
+      <div class="v2-status">
+        <div class="v2-status-row"><span>Collector feed</span><b>{{ state.collector_last_seen or "Belum ada" }}</b></div>
+        <div class="v2-status-row"><span>Last live data</span><b>{{ state.last_success or "Belum ada" }}</b></div>
+        <div class="v2-status-row"><span>JKT48 API</span><b>{{ jkt_api.status|upper }} • HTTP {{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></div>
+        <div class="v2-status-row"><span>AKB48 API</span><b>{{ akb_api.status|upper }} • HTTP {{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></div>
+        <div class="v2-status-row"><span>Schedule</span><b>08:00 • 12:00 • 20:00 WIB</b></div>
       </div>
-      {% else %}<p class="empty">Belum ada webhook.</p>{% endfor %}
-    </div>
-  </article>
+      {% if jkt_api.status == "live" and akb_api.status == "live" %}
+      <div class="v2-note v2-good">✓ Collector terhubung dan JKT48 + AKB48 sedang LIVE.</div>
+      {% elif jkt_api.status == "error" or akb_api.status == "error" %}
+      <div class="v2-note v2-bad">Ada sumber yang gagal. Cache tetap digunakan bila tersedia.</div>
+      {% else %}
+      <div class="v2-note v2-warn">⚠ Sebagian data memakai cache. Pastikan collector.py lokal berjalan.</div>
+      {% endif %}
+    </aside>
+  </section>
 
-  <article class="card">
-    <div class="card-head">
-      <div><h2>Cara Kerja Sniping</h2><p class="muted">Sniping tidak menambah request API. Ia memakai snapshot collector yang sama.</p></div>
+  <section class="v2-card">
+    <div class="v2-head">
+      <div><div class="v2-label">Inventory</div><h2>Available Tickets</h2><p>{{ available|length }} slot tersedia pada snapshot terakhir.</p></div>
+      <div class="v2-toolbar"><input id="slotSearch" class="v2-input" type="search" placeholder="Cari member / grup / sesi..."></div>
     </div>
-    <div class="api-note">
-      <p><b>1.</b> Pilih member target dari dropdown.</p>
-      <p><b>2.</b> Target disimpan khusus untuk akun Anda.</p>
-      <p><b>3.</b> Jika stok target berubah 0 → tersedia, webhook Anda mendapat alert <b>🎯 TARGET MEMBER RESTOCK</b>.</p>
-      <p><b>4.</b> Alert tetap satu pesan saja, bukan duplikat alert umum + sniping.</p>
+    <div class="v2-tablewrap">
+      <table class="v2-table" id="slotsTable">
+        <thead><tr><th>Group</th><th>Member</th><th>Sesi</th><th>Jalur</th><th>Stock</th><th>Aksi</th></tr></thead>
+        <tbody>
+          {% for m in available %}
+          <tr data-search="{{ m.group|lower }} {{ m.name|lower }} {{ m.session|lower }} {{ m.track|lower }}">
+            <td><span class="v2-pill">{{ m.group }}</span></td>
+            <td><b>{{ m.name }}</b>{% if (m.group, m.name) in target_keys %}<span class="v2-targetmark">🎯 TARGET</span>{% endif %}</td>
+            <td>{{ m.session }}</td><td>{{ m.track }}</td><td><b>{{ m.stock }}</b></td>
+            <td><a class="v2-buy" href="{{ m.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="empty">Belum ada slot tersedia / collector belum mengirim data.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  </article>
-</section>
+  </section>
+
+  <section class="v2-main">
+    <article class="v2-card">
+      <div class="v2-head"><div><div class="v2-label">Activity</div><h2>Recent Restocks</h2><p>Riwayat perubahan sold out → tersedia.</p></div></div>
+      <div class="v2-timeline">
+        {% for r in restocks %}
+        <div class="v2-restock">
+          <div class="v2-restock-main">
+            <b>{{ r.group_name }} • {{ r.member_name }}{% if r.is_target %}<span class="v2-targetmark">🎯 TARGET</span>{% endif %}</b>
+            <small>{{ r.session_name }} • {{ r.track_name }} • {{ r.old_stock }} → {{ r.new_stock }}</small>
+            <small>{{ r.detected_at }}</small>
+          </div>
+          <a class="v2-buy blue" href="{{ r.buy_url }}" target="_blank" rel="noopener noreferrer">Beli</a>
+        </div>
+        {% else %}
+        <p class="empty">Belum ada restock terdeteksi sejak database dibuat.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="v2-card">
+      <div class="v2-head"><div><div class="v2-label">Sniping Flow</div><h2>Cara Kerja</h2><p>Sniping memakai snapshot collector yang sama.</p></div></div>
+      <div class="v2-status">
+        <div class="v2-status-row"><span>1</span><b>Cari & pilih target member</b></div>
+        <div class="v2-status-row"><span>2</span><b>Target tersimpan per akun</b></div>
+        <div class="v2-status-row"><span>3</span><b>Collector mendeteksi 0 → tersedia</b></div>
+        <div class="v2-status-row"><span>4</span><b>Discord mendapat 🎯 TARGET alert</b></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="v2-bottom">
+    <article class="v2-card">
+      <div class="v2-head"><div><div class="v2-label">Notifications</div><h2>Discord Webhooks</h2><p>Tambahkan channel tujuan alert restock.</p></div></div>
+      <form action="/webhooks" method="post" class="v2-webform">
+        <label>Nama server/channel<input name="name" placeholder="Contoh: Server Utama #restock" required></label>
+        <label>Discord webhook URL<input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required></label>
+        <div class="v2-checks"><label><input type="checkbox" name="notify_jkt" checked> JKT48</label><label><input type="checkbox" name="notify_akb" checked> AKB48</label></div>
+        <button class="primary" type="submit">Test & Aktifkan Webhook</button>
+      </form>
+    </article>
+
+    <article class="v2-card">
+      <div class="v2-head"><div><div class="v2-label">Destinations</div><h2>Active Webhooks</h2><p>Test, disable, atau hapus webhook.</p></div></div>
+      <div class="v2-hooks">
+        {% for h in webhooks %}
+        <div class="v2-hook">
+          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small></div>
+          <div class="v2-rowactions">
+            <span class="v2-pill">{% if h.enabled %}ACTIVE{% else %}OFF{% endif %}</span>
+            <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>
+            <form method="post" action="/webhooks/{{ h.id }}/toggle"><button class="ghost">{% if h.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+            <form method="post" action="/webhooks/{{ h.id }}/delete" onsubmit="return confirm('Hapus webhook ini?')"><button class="danger">Delete</button></form>
+          </div>
+        </div>
+        {% else %}
+        <p class="empty">Belum ada webhook.</p>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+</div>
+
+<script>
+(() => {
+  const input = document.getElementById('memberSearch');
+  const hidden = document.getElementById('memberTarget');
+  const box = document.getElementById('memberResults');
+  const options = [...box.querySelectorAll('.v2-opt')];
+
+  function filterMembers() {
+    const q = input.value.trim().toLowerCase();
+    hidden.value = '';
+    let shown = 0;
+    options.forEach((option) => {
+      const ok = !q || option.dataset.search.includes(q);
+      option.style.display = ok ? 'flex' : 'none';
+      if (ok) shown += 1;
+    });
+    box.style.display = document.activeElement === input && shown ? 'block' : 'none';
+  }
+
+  input.addEventListener('focus', filterMembers);
+  input.addEventListener('input', filterMembers);
+  options.forEach((option) => option.addEventListener('click', () => {
+    hidden.value = option.dataset.value;
+    input.value = option.querySelector('span').textContent + ' • ' + option.querySelector('small').textContent;
+    box.style.display = 'none';
+  }));
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.v2-picker')) box.style.display = 'none';
+  });
+  document.getElementById('snipeForm').addEventListener('submit', (event) => {
+    if (!hidden.value) {
+      event.preventDefault();
+      input.focus();
+      filterMembers();
+    }
+  });
+
+  const slotSearch = document.getElementById('slotSearch');
+  slotSearch.addEventListener('input', () => {
+    const q = slotSearch.value.trim().toLowerCase();
+    document.querySelectorAll('#slotsTable tbody tr[data-search]').forEach((row) => {
+      row.style.display = !q || row.dataset.search.includes(q) ? '' : 'none';
+    });
+  });
+})();
+</script>
 {% endblock %}
