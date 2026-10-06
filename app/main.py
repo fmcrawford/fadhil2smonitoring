@@ -468,7 +468,7 @@ def create_webhook_route(
         return RedirectResponse(
             "/?message="
             + quote(
-                "Webhook berhasil diaktifkan. Restock akan langsung mengirim @everyone."
+                "Webhook berhasil diaktifkan. Restock akan langsung mengirim @everyone"
             ),
             status_code=303,
         )
