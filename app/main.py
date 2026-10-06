@@ -1,0 +1,758 @@
+import logging
+import re
+from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import quote
+
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from .config import settings
+from .db import (
+    add_webhook,
+    create_user,
+    delete_webhook,
+    get_user,
+    get_user_by_username,
+    get_webhook_for_user,
+    init_db,
+    list_user_webhooks,
+    recent_restocks,
+    toggle_webhook,
+)
+
+from .monitor import (
+    MonitorService,
+    send_activation_message,
+    send_test_message,
+    snapshot,
+)
+
+from .security import (
+    decrypt_webhook,
+    encrypt_webhook,
+    hash_password,
+    make_session_token,
+    mask_webhook,
+    read_session_token,
+    verify_password,
+)
+
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+
+logger = logging.getLogger("48group.main")
+
+
+# ============================================================
+# PATH / TEMPLATE / STATIC
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+templates = Jinja2Templates(
+    directory=str(BASE_DIR / "templates")
+)
+
+
+# ============================================================
+# DISCORD WEBHOOK VALIDATION
+# ============================================================
+
+WEBHOOK_RE = re.compile(
+    r"^https://(?:canary\.|ptb\.)?"
+    r"(?:discord\.com|discordapp\.com)"
+    r"/api/webhooks/\d+/[A-Za-z0-9._-]+/?$"
+)
+
+
+# ============================================================
+# MONITOR SERVICE
+# ============================================================
+
+service = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    global service
+
+    if not settings.app_secret:
+        raise RuntimeError(
+            "APP_SECRET wajib di-set."
+        )
+
+    if not settings.webhook_encryption_key:
+        raise RuntimeError(
+            "WEBHOOK_ENCRYPTION_KEY wajib di-set."
+        )
+
+    # Database harus dibuat terlebih dahulu
+    init_db()
+
+    # Baru monitor dibuat setelah database siap
+    service = MonitorService()
+
+    service.start()
+
+    logger.info("48Group Monitor started.")
+
+    try:
+        yield
+    finally:
+        if service:
+            service.stop()
+
+        logger.info("48Group Monitor stopped.")
+
+
+# ============================================================
+# FASTAPI
+# ============================================================
+
+app = FastAPI(
+    title="48Group 2-Shot Monitor",
+    lifespan=lifespan,
+)
+
+
+app.mount(
+    "/static",
+    StaticFiles(
+        directory=str(BASE_DIR / "static")
+    ),
+    name="static",
+)
+
+
+# ============================================================
+# AUTH HELPERS
+# ============================================================
+
+def current_user(request: Request):
+
+    token = request.cookies.get("session")
+
+    if not token:
+        return None
+
+    user_id = read_session_token(token)
+
+    if not user_id:
+        return None
+
+    return get_user(user_id)
+
+
+def go_login():
+
+    return RedirectResponse(
+        "/login",
+        status_code=303,
+    )
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/health")
+def health():
+
+    state = snapshot()
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "monitor_running": state["running"],
+            "last_check": state["last_check"],
+            "last_success": state["last_success"],
+            "last_error": state["last_error"],
+        }
+    )
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request):
+
+    user = current_user(request)
+
+    if not user:
+        return go_login()
+
+    state = snapshot()
+
+    members = state["members"]
+
+    available = [
+        m
+        for m in members
+        if m["stock"] > 0
+    ]
+
+    def stats(group_name):
+
+        group_members = [
+            m
+            for m in members
+            if m["group"] == group_name
+        ]
+
+        available_members = [
+            m
+            for m in group_members
+            if m["stock"] > 0
+        ]
+
+        return {
+            "total": len(group_members),
+            "available": len(available_members),
+            "sold_out": max(
+                0,
+                len(group_members)
+                - len(available_members),
+            ),
+        }
+
+    hooks = []
+
+    for row in list_user_webhooks(user["id"]):
+
+        hook = dict(row)
+
+        try:
+
+            webhook_url = decrypt_webhook(
+                row["webhook_url_enc"]
+            )
+
+            hook["masked_url"] = mask_webhook(
+                webhook_url
+            )
+
+        except Exception:
+
+            hook["masked_url"] = (
+                "[encryption key mismatch]"
+            )
+
+        hooks.append(hook)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={
+            "user": user,
+            "state": state,
+            "available": available,
+            "jkt": stats("JKT48"),
+            "akb": stats("AKB48"),
+            "webhooks": hooks,
+            "restocks": recent_restocks(15),
+            "message": request.query_params.get(
+                "message"
+            ),
+            "error": request.query_params.get(
+                "error"
+            ),
+        },
+    )
+
+
+# ============================================================
+# REGISTER
+# ============================================================
+
+@app.get(
+    "/register",
+    response_class=HTMLResponse,
+)
+def register_page(request: Request):
+
+    return templates.TemplateResponse(
+        request=request,
+        name="register.html",
+        context={
+            "error": None,
+        },
+    )
+
+
+@app.post("/register")
+def register(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+
+    username = username.strip()
+
+    if len(username) < 3:
+
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error":
+                "Username minimal 3 karakter."
+            },
+            status_code=400,
+        )
+
+    if len(password) < 8:
+
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error":
+                "Password minimal 8 karakter."
+            },
+            status_code=400,
+        )
+
+    if get_user_by_username(username):
+
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error":
+                "Username sudah digunakan."
+            },
+            status_code=400,
+        )
+
+    try:
+
+        user_id = create_user(
+            username,
+            hash_password(password),
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Gagal membuat akun."
+        )
+
+        return templates.TemplateResponse(
+            request=request,
+            name="register.html",
+            context={
+                "error":
+                "Gagal membuat akun."
+            },
+            status_code=400,
+        )
+
+    response = RedirectResponse(
+        "/",
+        status_code=303,
+    )
+
+    response.set_cookie(
+        "session",
+        make_session_token(user_id),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
+
+    return response
+
+
+# ============================================================
+# LOGIN
+# ============================================================
+
+@app.get(
+    "/login",
+    response_class=HTMLResponse,
+)
+def login_page(request: Request):
+
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={
+            "error": None,
+        },
+    )
+
+
+@app.post("/login")
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+
+    user = get_user_by_username(
+        username.strip()
+    )
+
+    if (
+        not user
+        or not verify_password(
+            password,
+            user["password_hash"],
+        )
+    ):
+
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={
+                "error":
+                "Username atau password salah."
+            },
+            status_code=401,
+        )
+
+    response = RedirectResponse(
+        "/",
+        status_code=303,
+    )
+
+    response.set_cookie(
+        "session",
+        make_session_token(
+            user["id"]
+        ),
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
+
+    return response
+
+
+# ============================================================
+# LOGOUT
+# ============================================================
+
+@app.post("/logout")
+def logout():
+
+    response = RedirectResponse(
+        "/login",
+        status_code=303,
+    )
+
+    response.delete_cookie(
+        "session"
+    )
+
+    return response
+
+
+# ============================================================
+# ADD WEBHOOK
+# ============================================================
+
+@app.post("/webhooks")
+def create_webhook_route(
+    request: Request,
+    name: str = Form(...),
+    webhook_url: str = Form(...),
+    notify_jkt: str | None = Form(None),
+    notify_akb: str | None = Form(None),
+):
+
+    user = current_user(request)
+
+    if not user:
+        return go_login()
+
+    # Buang spasi dan slash terakhir
+    webhook_url = (
+        webhook_url
+        .strip()
+        .rstrip("/")
+    )
+
+    # Validasi format URL
+    if not WEBHOOK_RE.match(
+        webhook_url
+    ):
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Format URL webhook Discord "
+                "tidak valid."
+            ),
+            status_code=303,
+        )
+
+    use_jkt = (
+        notify_jkt == "on"
+    )
+
+    use_akb = (
+        notify_akb == "on"
+    )
+
+    if (
+        not use_jkt
+        and not use_akb
+    ):
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Pilih minimal satu grup: "
+                "JKT48 atau AKB48."
+            ),
+            status_code=303,
+        )
+
+    try:
+
+        # ==================================================
+        # TEST / ACTIVATION
+        #
+        # Pesan activation sekaligus menjadi validasi
+        # bahwa webhook benar-benar bisa menerima pesan.
+        # ==================================================
+
+        send_activation_message(
+            webhook_url
+        )
+
+        # ==================================================
+        # SIMPAN SETELAH DISCORD BERHASIL
+        # ==================================================
+
+        add_webhook(
+            user["id"],
+            name.strip()
+            or "Discord Channel",
+            encrypt_webhook(
+                webhook_url
+            ),
+            use_jkt,
+            use_akb,
+            True,
+        )
+
+        logger.info(
+            "Webhook berhasil ditambahkan "
+            "oleh user id=%s",
+            user["id"],
+        )
+
+        return RedirectResponse(
+            "/?message="
+            + quote(
+                "Webhook berhasil diaktifkan. "
+                "Restock akan langsung "
+                "mengirim @everyone."
+            ),
+            status_code=303,
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "Gagal menambahkan webhook"
+        )
+
+        # Batasi panjang error agar dashboard
+        # tidak berantakan.
+        error_message = str(exc)
+
+        if len(error_message) > 350:
+            error_message = (
+                error_message[:350]
+                + "..."
+            )
+
+        return RedirectResponse(
+            "/?error="
+            + quote(error_message),
+            status_code=303,
+        )
+
+
+# ============================================================
+# TEST WEBHOOK
+# ============================================================
+
+@app.post(
+    "/webhooks/{webhook_id}/test"
+)
+def test_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+
+    user = current_user(request)
+
+    if not user:
+        return go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if not hook:
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Webhook tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    try:
+
+        webhook_url = decrypt_webhook(
+            hook["webhook_url_enc"]
+        )
+
+        send_test_message(
+            webhook_url
+        )
+
+        return RedirectResponse(
+            "/?message="
+            + quote(
+                "Test webhook berhasil."
+            ),
+            status_code=303,
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "Test webhook gagal"
+        )
+
+        error_message = str(exc)
+
+        if len(error_message) > 350:
+            error_message = (
+                error_message[:350]
+                + "..."
+            )
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Test webhook gagal: "
+                + error_message
+            ),
+            status_code=303,
+        )
+
+
+# ============================================================
+# ENABLE / DISABLE WEBHOOK
+# ============================================================
+
+@app.post(
+    "/webhooks/{webhook_id}/toggle"
+)
+def toggle_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+
+    user = current_user(request)
+
+    if not user:
+        return go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if not hook:
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Webhook tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    toggle_webhook(
+        webhook_id,
+        user["id"],
+    )
+
+    return RedirectResponse(
+        "/?message="
+        + quote(
+            "Status webhook diperbarui."
+        ),
+        status_code=303,
+    )
+
+
+# ============================================================
+# DELETE WEBHOOK
+# ============================================================
+
+@app.post(
+    "/webhooks/{webhook_id}/delete"
+)
+def delete_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+
+    user = current_user(request)
+
+    if not user:
+        return go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if not hook:
+
+        return RedirectResponse(
+            "/?error="
+            + quote(
+                "Webhook tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    delete_webhook(
+        webhook_id,
+        user["id"],
+    )
+
+    return RedirectResponse(
+        "/?message="
+        + quote(
+            "Webhook berhasil dihapus."
+        ),
+        status_code=303,
+    )
