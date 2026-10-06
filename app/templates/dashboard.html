@@ -1,234 +1,2889 @@
-{% extends "base.html" %}
-{% block title %}Dashboard • 48Group Monitor{% endblock %}
-{% block content %}
-<style>
-  .api-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em}
-  .api-live{background:#0f2c21;color:#86efac}.api-cached{background:#30270f;color:#fde68a}.api-error{background:#35161b;color:#fda4af}
-  .group-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:13px;font-size:12px;color:#a1a1aa}.group-meta b{color:#e4e4e7}
-  .api-note{margin-top:10px;font-size:12px;color:#a1a1aa;line-height:1.45}
-  .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;width:100%}.status-item{display:flex;flex-direction:column;gap:4px}
-  .api-summary{width:100%;margin-top:12px;padding-top:12px;border-top:1px solid #29292e;font-size:13px}.api-summary.good{color:#86efac}.api-summary.warn{color:#fbbf24}.api-summary.bad{color:#fda4af}
-  .feature-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:16px;margin:16px 0}
-  .snipe-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
-  .target-list{display:grid;gap:10px;margin-top:16px}.target-row{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:13px;border:1px solid #2b2b31;border-radius:13px;background:#111114}
-  .target-main{min-width:0}.target-main small{display:block;color:#8f8f99;margin-top:4px}.target-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .target-available{color:#86efac}.target-sold{color:#a1a1aa}
-  .buy-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;border-radius:10px;padding:8px 11px;background:#16a34a;color:white;font-weight:800;font-size:12px;white-space:nowrap}
-  .buy-btn:hover{filter:brightness(1.08)}.buy-btn.secondary{background:#2563eb}.snipe-mark{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;background:#3a2d08;color:#fde68a;font-size:10px;font-weight:800;margin-left:6px}
-  .timeline-item{align-items:flex-start}.timeline-content{flex:1;min-width:0}.timeline-action{margin-left:auto}
-  .slot-member{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-  select{width:100%;background:#0d0d10;border:1px solid #34343a;color:white;padding:11px 12px;border-radius:10px;outline:none}
-  select:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,.15)}
-  @media(max-width:900px){.feature-grid{grid-template-columns:1fr}.snipe-form{grid-template-columns:1fr}.target-row{align-items:flex-start;flex-direction:column}}
-  @media(max-width:760px){.status-grid{grid-template-columns:1fr}.group-meta{gap:8px}}
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JKT48 Ticket Radar</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#181b25" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ticket Radar">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style id="radar-premium-ui">
+:root{--bg:#f6f7fb;--card:#fff;--text:#1a1d27;--mut:#6b7185;--line:#e3e6ef;--ok:#16a34a;--no:#dc2626;--acc:#e11d48;--warn:#d97706;--soft:#f0f2f8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1117;--card:#181b25;--text:#eceef5;--mut:#8b91a7;--line:#262a38;--soft:#1f2330}}
+:root[data-theme="dark"]{--bg:#0f1117;--card:#181b25;--text:#eceef5;--mut:#8b91a7;--line:#262a38;--soft:#1f2330}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px}
+@media(min-width:601px){header{position:sticky;top:0;z-index:5}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+.row+.row{margin-top:8px}
+h1{font-size:17px;margin:0;flex:1;min-width:140px}
+h1 b{color:var(--acc)}
+.pill{font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--mut);white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.pill.ok{color:var(--ok);border-color:var(--ok)}.pill.bad{color:var(--no);border-color:var(--no)}.pill.warn{color:var(--warn);border-color:var(--warn)}
+.tabs{display:flex;gap:6px}
+.tab,.btn,select{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+.tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.sq{padding:6px 9px}
+input[type=search]{flex:1;min-width:150px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;padding:7px 10px;font:inherit}
+.opts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+label.pill{cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+@media(pointer:coarse){.tab,.btn,select,input[type=search],label.pill{min-height:40px}}
+@media(max-width:600px){
+  .opts{flex-wrap:nowrap;overflow-x:auto;width:100%;padding-bottom:2px;scrollbar-width:none}
+  .opts::-webkit-scrollbar{display:none}
+  .tabs{width:100%}.tab{flex:1;justify-content:center}
+  input[type=search]{flex-basis:100%}
+}
+main{max-width:1100px;margin:0 auto;padding:14px 16px 90px}
+
+.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+@media(max-width:600px){.sum{grid-template-columns:repeat(2,1fr)}}
+.sum div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.sum b{display:block;font-size:22px}.sum span{color:var(--mut);font-size:12px}
+
+.help{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+.help>summary{cursor:pointer;padding:10px 14px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:8px}
+.help>summary::-webkit-details-marker{display:none}
+.help .body{padding:0 14px 12px;color:var(--mut);font-size:13px}
+.help dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px}
+.help dt{font-weight:600;color:var(--text);white-space:nowrap}
+.help dd{margin:0}
+@media(max-width:600px){.help dl{grid-template-columns:1fr}.help dd{margin-bottom:4px}}
+#pollBanner{padding:10px 14px;color:var(--warn);border-color:var(--warn);font-size:13px}
+.fi{display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer;flex-wrap:wrap;color:var(--text)}
+.fi:first-child{border-top:0}.fi time{color:var(--mut);min-width:44px}.fi b{color:var(--ok)}
+.fi small{color:var(--mut);flex-basis:100%}
+
+#list{display:grid;gap:10px;grid-template-columns:1fr;align-items:start}
+@media(min-width:1000px){#list{grid-template-columns:1fr 1fr}}
+.m{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.m[open]{grid-column:1/-1}
+.m>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;gap:12px;align-items:center}
+.m>summary::-webkit-details-marker{display:none}
+.m[open]>summary{border-bottom:1px solid var(--line)}
+.av{position:relative;flex:none;overflow:hidden;background:var(--soft);color:var(--mut);display:flex;align-items:center;justify-content:center;font-weight:700}
+.av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%}
+.av.s{width:42px;height:42px;border-radius:50%}
+.av.l{width:96px;height:128px;border-radius:12px;font-size:28px}
+@media(max-width:600px){.av.l{width:72px;height:96px;font-size:22px}}
+.who{flex:1;min-width:0}
+.n{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vip{color:var(--acc);font-size:12px;margin-left:6px;font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
+.chip{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--soft);color:var(--mut);white-space:nowrap}
+.chip.has{background:var(--ok);color:#fff;font-weight:600}
+.chip.none{background:rgba(220,38,38,.12);color:var(--no)}
+.chip.hot{background:var(--acc);color:#fff;font-weight:600}
+.star{border:0;background:none;font-size:20px;line-height:1;padding:6px;cursor:pointer;color:var(--mut)}
+.star.on{color:#f59e0b}
+.arrow{color:var(--mut);transition:transform .15s}
+.m[open] .arrow{transform:rotate(90deg)}
+
+.detail{padding:14px}
+@media(max-width:600px){.detail{padding:10px}}
+.hero{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}
+.hero .txt{flex:1;min-width:0}
+.hero h2{margin:0 0 4px;font-size:18px}
+.hero p{margin:0 0 8px;color:var(--mut);font-size:13px}
+.kpis{display:flex;gap:8px;flex-wrap:wrap}
+.kpi{background:var(--soft);border-radius:10px;padding:6px 12px}
+.kpi b{font-size:18px;display:block}.kpi span{font-size:11px;color:var(--mut)}
+
+.sgrid{display:grid;gap:10px;grid-template-columns:1fr}
+@media(min-width:800px){.sgrid{grid-template-columns:1fr 1fr}}
+.sess{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sess-h{display:flex;gap:8px;align-items:center;background:var(--soft);padding:8px 12px}
+.sess-h .t{font-weight:600;flex:1;min-width:0}
+.ln{position:relative;display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid var(--line)}
+.ln .pr{color:var(--mut)}
+.ln .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--ok);opacity:.7}
+.q{font-weight:700;min-width:44px;text-align:right}.q.ok{color:var(--ok)}.q.no{color:var(--no)}
+.new{background:rgba(22,163,74,.12)}
+.tag{display:block;font-size:11px;font-weight:400;color:var(--ok)}
+.empty{text-align:center;color:var(--mut);padding:40px 0;grid-column:1/-1}
+.sk{height:64px;border-radius:12px;background:var(--soft);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.sk{animation:none}.arrow{transition:none}}
+
+#toasts{position:fixed;right:12px;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;align-items:flex-end;pointer-events:none;z-index:9}
+.toast{pointer-events:auto;background:var(--text);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:13px;max-width:420px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+#top{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:none;z-index:8}
+
+/* ====== FITUR BARU ====== */
+
+/* banner data basi (merah, mencolok) */
+.alert{background:var(--no);color:#fff;border-radius:12px;padding:12px 14px;margin-bottom:10px;font-weight:600;font-size:13px;line-height:1.45}
+.alert[hidden]{display:none}
+#list.stale .m{opacity:.7}
+
+/* info kecepatan di baris jalur */
+.ln.click{cursor:pointer}
+.ln .meta{grid-column:1/-1;font-size:12px;color:var(--mut);margin-top:-4px}
+.ln .meta:empty{display:none}
+
+/* panel riwayat (sparkline) */
+.hist{padding:8px 12px 10px;background:var(--soft);border-top:1px dashed var(--line);font-size:12px;color:var(--mut)}
+.hist svg{width:100%;height:70px;display:block;margin-bottom:4px}
+.hist .a{fill:rgba(22,163,74,.16);stroke:none}
+.hist .l{fill:none;stroke:var(--ok);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.hist .z{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+
+/* tombol aksi */
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.acts .btn{padding:4px 10px;font-size:12px}
+.sess-h .btn{padding:2px 8px;font-size:12px}
+
+/* mode kompak */
+#list.compact{grid-template-columns:1fr;gap:6px}
+#list.compact .m>summary{padding:6px 10px;gap:8px}
+#list.compact .av.s{width:28px;height:28px;font-size:12px}
+#list.compact .who{display:flex;align-items:center;gap:10px;min-width:0}
+#list.compact .n{flex:0 1 auto;font-size:14px}
+#list.compact .chips{margin-top:0;flex-wrap:nowrap;overflow:hidden}
+#list.compact .chip.x{display:none}
+
+/* ====== TOMBOL BELI ====== */
+#buy{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.ln{grid-template-columns:1fr auto auto auto}
+.buyc{min-width:68px;text-align:right}
+.ln .buybtn{padding:3px 10px;font-size:12px;background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;white-space:nowrap}
+.buyp{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn.buysm{padding:4px 10px;font-size:12px;font-weight:600;background:var(--acc);border-color:var(--acc);color:#fff;flex:none;white-space:nowrap}
+.fi .btn{padding:0 8px;font-size:12px;margin-left:auto}
+.toast.link{cursor:pointer}
+
+/* ====== TAMPILAN BARU ====== */
+:root{--low:#eab308}
+
+/* ikon SVG (menggantikan emoji yang tampil beda tiap perangkat) */
+.ic{width:1.05em;height:1.05em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.15em;margin-right:5px;flex:none}
+.ic:last-child{margin-right:0}
+.chip{display:inline-flex;align-items:center}
+.chip .ic{margin-right:4px}
+
+/* angka rapi */
+.q,.pr,.kpi b,.sum b,.chip,.meta{font-variant-numeric:tabular-nums}
+.q{font-size:16px}
+.q.low{color:var(--low)}
+.ln .bar.low{background:var(--low)}
+.chip.lowc{background:var(--low);color:#1a1d27;font-weight:600}
+
+/* warna status kartu */
+.m{border-left-width:4px}
+.m.st-ok{border-left-color:var(--ok)}
+.m.st-low{border-left-color:var(--low)}
+.m.st-so{border-left-color:var(--no)}
+.m.st-so:not([open]){opacity:.72}
+
+/* sorot saat restock baru terdeteksi */
+@keyframes flashcard{0%{box-shadow:0 0 0 0 rgba(22,163,74,.7);background-color:rgba(22,163,74,.22)}100%{box-shadow:0 0 0 12px rgba(22,163,74,0)}}
+@keyframes flashrow{0%{background-color:rgba(22,163,74,.45)}100%{background-color:rgba(22,163,74,0)}}
+@keyframes flashcell{0%{box-shadow:0 0 0 0 rgba(22,163,74,.9)}100%{box-shadow:0 0 0 8px rgba(22,163,74,0)}}
+.m.flash{animation:flashcard 1.2s ease-out 2}
+.ln.flash{animation:flashrow 1.2s ease-out 2}
+.hmc.flash{animation:flashcell 1.2s ease-out 2}
+@media(prefers-reduced-motion:reduce){.m.flash,.ln.flash,.hmc.flash{animation:none}}
+
+/* heatmap member x sesi */
+.seg{margin-left:auto}
+.hm-wrap{grid-column:1/-1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;overflow-x:auto}
+.hm-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-bottom:8px}
+.hm-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+table.hm{border-collapse:separate;border-spacing:3px;font-variant-numeric:tabular-nums}
+.hm th{font-weight:600;font-size:11px;color:var(--mut);text-align:center;white-space:nowrap;padding:2px 4px}
+.hm th small{display:block;font-weight:400}
+.hm .hm-name{position:sticky;left:0;z-index:1;background:var(--card);text-align:left;padding:0 8px 0 0}
+.hm-n{border:0;background:none;color:var(--text);font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:6px 0;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;display:block}
+.hmc{min-width:54px;height:34px;border-radius:6px;text-align:center;font-weight:700;font-size:13px;padding:0}
+.hmc.so{background:rgba(220,38,38,.14);color:var(--no)}
+.hmc.none{background:var(--soft);color:var(--mut);font-weight:400}
+.hmv{display:flex;align-items:center;justify-content:center;width:100%;height:34px;color:inherit;text-decoration:none}
+a.hmv:hover{text-decoration:underline}
+.hm tfoot th,.hm tfoot td{border-top:1px solid var(--line);font-size:12px;color:var(--mut);font-weight:600}
+
+/* bar bawah (HP) */
+#bar{display:none}
+@media(max-width:600px){
+  #bar{display:flex;gap:8px;align-items:center;position:fixed;left:0;right:0;bottom:0;z-index:7;background:var(--card);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px))}
+  #bar .tabs{flex:1}
+  #bar #barBuy{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;flex:none}
+  main{padding-bottom:150px}
+  #toasts{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  #top{bottom:calc(82px + env(safe-area-inset-bottom,0px))}
+  .seg{margin-left:0}
+}
+/* ====== ANALYTICS & STATUS ====== */
+.pg{grid-column:1/-1}
+h2.ph{margin:0 0 8px;font-size:13px;letter-spacing:.06em;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.card h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;color:var(--mut)}
+.note{background:var(--soft);border-radius:10px;padding:8px 12px;margin-bottom:10px;color:var(--mut);font-size:12px}
+.sum.txt b{font-size:16px;overflow-wrap:anywhere}
+.tw{overflow-x:auto}
+table.at{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.at th,.at td{padding:6px 8px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+.at th:first-child,.at td:first-child{text-align:left;white-space:normal}
+.at thead th{border-top:0;color:var(--mut);font-weight:600;font-size:12px}
+.at small{display:block;color:var(--mut);font-size:11px}
+.hbars{display:flex;align-items:flex-end;gap:3px;height:96px}
+.hb{flex:1;height:100%;display:flex;align-items:flex-end}
+.hb i{display:block;width:100%;background:var(--ok);opacity:.75;border-radius:3px 3px 0 0}
+.hb.pk i{background:var(--acc);opacity:1}
+.hb.now{border-bottom:2px solid var(--text)}
+.haxis{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:4px}
+.ssum{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-weight:700}
+.ssum.ok{color:var(--ok);border-color:var(--ok)}
+.ssum.warn{color:var(--warn);border-color:var(--warn)}
+.ssum.bad{background:var(--no);border-color:var(--no);color:#fff}
+.srow{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.srow .dot{width:10px;height:10px;border-radius:50%;background:var(--mut)}
+.srow.ok .dot{background:var(--ok)}.srow.warn .dot{background:var(--warn)}.srow.bad .dot{background:var(--no)}
+.srow .sn{font-weight:600}
+.srow .sl{font-weight:700;font-size:12px;color:var(--mut)}
+.srow.ok .sl{color:var(--ok)}.srow.warn .sl{color:var(--warn)}.srow.bad .sl{color:var(--no)}
+.srow .sd{grid-column:2/-1;color:var(--mut);font-size:12px}
+.urow{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+#pushBox [hidden]{display:none!important}
+
+/* JKT48 Ticket Radar Premium UI layer */
+
+/* =========================================================
+   JKT48 TICKET RADAR — PREMIUM UI REFRESH
+   Visual-only layer: keeps existing IDs / JS / features intact.
+   ========================================================= */
+:root{
+  --bg:#0a0d14;
+  --card:#111621;
+  --card2:#151b28;
+  --text:#f4f6fb;
+  --mut:#8f98ad;
+  --line:#242c3d;
+  --soft:#171e2c;
+  --acc:#ff1763;
+  --acc2:#ff4f88;
+  --ok:#22c77a;
+  --no:#ff4d5f;
+  --warn:#f5b82e;
+  --blue:#6c8cff;
+  --shadow:0 14px 38px rgba(0,0,0,.26);
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f4f6fa;
+    --card:#ffffff;
+    --card2:#f8f9fc;
+    --text:#171a23;
+    --mut:#687087;
+    --line:#e4e7ef;
+    --soft:#f0f2f7;
+    --shadow:0 12px 30px rgba(25,32,52,.08);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f4f6fa;--card:#fff;--card2:#f8f9fc;--text:#171a23;
+  --mut:#687087;--line:#e4e7ef;--soft:#f0f2f7;
+  --shadow:0 12px 30px rgba(25,32,52,.08);
+}
+html{background:var(--bg)}
+body{
+  background:
+    radial-gradient(900px 420px at 12% -8%,rgba(255,23,99,.10),transparent 60%),
+    radial-gradient(700px 380px at 88% 0%,rgba(108,140,255,.08),transparent 60%),
+    var(--bg);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  letter-spacing:-.01em;
+}
+body:before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:42px 42px;
+  mask-image:linear-gradient(to bottom,black,transparent 72%);
+}
+
+/* ---------- top shell ---------- */
+header{
+  background:color-mix(in srgb,var(--card) 88%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--line) 85%,transparent);
+  box-shadow:0 8px 30px rgba(0,0,0,.12);
+  backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  padding:14px 18px 12px;
+}
+@supports not (background:color-mix(in srgb,black,white)){
+  header{background:var(--card)}
+}
+header>.row:first-child{
+  min-height:42px;
+  max-width:1220px;
+}
+.row{max-width:1220px;gap:9px}
+.row+.row{margin-top:10px}
+
+h1{
+  font-size:18px;
+  font-weight:800;
+  letter-spacing:-.035em;
+  display:flex;align-items:center;gap:2px;
+}
+h1:first-letter{filter:saturate(1.2)}
+h1 b{
+  background:linear-gradient(90deg,#ff1763,#ff4e86);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+#status{
+  background:rgba(34,199,122,.08);
+  border-color:rgba(34,199,122,.45);
+  color:#35d88c;
+  padding:5px 11px;
+  font-weight:700;
+}
+.btn,.tab,select{
+  border-color:var(--line);
+  background:var(--card2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+  transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease;
+}
+.btn:hover,.tab:hover,select:hover{
+  border-color:#3a455d;
+  transform:translateY(-1px);
+}
+.btn:active,.tab:active{transform:translateY(0)}
+#refresh,#theme{
+  width:40px;height:40px;justify-content:center;padding:0;border-radius:12px;
+}
+#buy{
+  border-radius:12px;
+  padding:9px 15px;
+  background:linear-gradient(135deg,#ff1763,#e80f58);
+  border-color:#ff1763;
+  box-shadow:0 8px 20px rgba(255,23,99,.22);
+}
+#buy:hover{box-shadow:0 10px 25px rgba(255,23,99,.32)}
+.tabs{
+  gap:6px;
+  padding:4px;
+  background:var(--soft);
+  border:1px solid var(--line);
+  border-radius:13px;
+}
+.tab{
+  border:0;
+  background:transparent;
+  border-radius:9px;
+  padding:8px 14px;
+  color:var(--mut);
+  font-weight:700;
+}
+.tab.on{
+  background:linear-gradient(135deg,var(--acc),#d90d55);
+  box-shadow:0 5px 15px rgba(255,23,99,.22);
+  color:#fff;
+}
+.seg{margin-left:auto}
+.seg .tab.on{
+  background:var(--card);
+  color:var(--text);
+  border:1px solid var(--line);
+  box-shadow:0 4px 12px rgba(0,0,0,.12);
+}
+input[type=search]{
+  min-height:42px;
+  border-radius:12px;
+  background:var(--card);
+  border-color:var(--line);
+  padding:9px 13px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+}
+input[type=search]:focus,select:focus{
+  border-color:rgba(255,23,99,.65);
+  box-shadow:0 0 0 3px rgba(255,23,99,.10);
+  outline:none;
+}
+select{min-height:42px;border-radius:12px;padding:8px 34px 8px 12px}
+.opts{
+  width:100%;
+  padding:3px 0 1px;
+}
+label.pill{
+  background:var(--card);
+  padding:6px 10px;
+  border-radius:10px;
+  border-color:var(--line);
+  font-weight:600;
+  transition:.16s ease;
+}
+label.pill:hover{border-color:#3a455d;background:var(--card2)}
+label.pill:has(input:checked){
+  border-color:rgba(255,23,99,.55);
+  color:var(--text);
+  background:rgba(255,23,99,.08);
+}
+label.pill input{accent-color:var(--acc)}
+
+/* ---------- content ---------- */
+main{max-width:1220px;padding:18px 18px 100px}
+.sum{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+  margin-bottom:14px;
+}
+.sum>div{
+  position:relative;
+  min-height:92px;
+  padding:16px 17px;
+  border-radius:16px;
+  background:linear-gradient(145deg,var(--card),var(--card2));
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.sum>div:after{
+  content:"";position:absolute;width:90px;height:90px;right:-28px;top:-38px;
+  border-radius:50%;background:rgba(255,23,99,.08);
+}
+.sum>div:nth-child(2):after{background:rgba(108,140,255,.09)}
+.sum>div:nth-child(3):after{background:rgba(34,199,122,.09)}
+.sum>div:nth-child(4):after{background:rgba(245,184,46,.09)}
+.sum b{
+  position:relative;z-index:1;
+  font-size:27px;font-weight:850;letter-spacing:-.04em;
+}
+.sum span{
+  display:block;margin-top:2px;color:var(--mut);font-size:12px;font-weight:600;
+}
+.sum>div:nth-child(1){border-top:2px solid var(--acc)}
+.sum>div:nth-child(2){border-top:2px solid var(--blue)}
+.sum>div:nth-child(3){border-top:2px solid var(--ok)}
+.sum>div:nth-child(4){border-top:2px solid var(--warn)}
+
+.help,.card,.ssum,.hm-wrap{
+  border-radius:15px;
+  background:linear-gradient(145deg,var(--card),var(--card2));
+  box-shadow:0 8px 24px rgba(0,0,0,.10);
+}
+.help{margin-bottom:12px}
+.help>summary{padding:12px 15px}
+.help>summary:hover{background:rgba(255,255,255,.018)}
+.help .body{padding:0 15px 14px}
+
+.alert{
+  border-radius:14px;
+  box-shadow:0 8px 24px rgba(255,77,95,.12);
+}
+
+/* ---------- member cards ---------- */
+#list{
+  gap:12px;
+}
+@media(min-width:1000px){#list{grid-template-columns:1fr 1fr}}
+.m{
+  border:1px solid var(--line);
+  border-left-width:4px;
+  border-radius:16px;
+  background:linear-gradient(145deg,var(--card),var(--card2));
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.m:hover{
+  transform:translateY(-2px);
+  box-shadow:0 14px 34px rgba(0,0,0,.18);
+}
+.m[open]{
+  box-shadow:0 16px 42px rgba(0,0,0,.20);
+}
+.m>summary{
+  min-height:82px;
+  padding:13px 14px;
+}
+.m[open]>summary{
+  background:linear-gradient(90deg,rgba(255,23,99,.035),transparent 70%);
+}
+.av.s{
+  width:48px;height:48px;
+  border:2px solid rgba(255,255,255,.07);
+  box-shadow:0 5px 14px rgba(0,0,0,.20);
+}
+.n{font-size:15px;font-weight:800;letter-spacing:-.015em}
+.vip{
+  background:rgba(255,23,99,.10);
+  padding:2px 6px;border-radius:6px;
+}
+.chips{gap:5px;margin-top:5px}
+.chip{
+  border:1px solid rgba(255,255,255,.035);
+  background:var(--soft);
+  padding:3px 8px;
+  border-radius:8px;
+  font-weight:600;
+}
+.chip.has{
+  background:rgba(34,199,122,.12);
+  border-color:rgba(34,199,122,.22);
+  color:#36d98e;
+}
+.chip.none{
+  background:rgba(255,77,95,.09);
+  border-color:rgba(255,77,95,.18);
+}
+.chip.hot{
+  background:rgba(255,23,99,.12);
+  border-color:rgba(255,23,99,.25);
+}
+.star{
+  width:38px;height:38px;border-radius:10px;
+  transition:.16s ease;
+}
+.star:hover{background:var(--soft);transform:scale(1.04)}
+.arrow{font-size:18px}
+
+.detail{
+  padding:15px;
+  background:rgba(0,0,0,.07);
+}
+.hero{
+  padding-bottom:13px;
+  border-bottom:1px solid var(--line);
+}
+.hero .av.l{
+  border:1px solid var(--line);
+  box-shadow:0 10px 25px rgba(0,0,0,.20);
+}
+.hero h2{font-size:21px;font-weight:850;letter-spacing:-.03em}
+.kpis{gap:7px}
+.kpi{
+  padding:7px 11px;
+  border:1px solid var(--line);
+  background:var(--soft);
+  border-radius:10px;
+}
+.kpi b{font-size:17px}
+.sgrid{gap:10px}
+.sess{
+  border-radius:13px;
+  border-color:var(--line);
+  overflow:hidden;
+  background:var(--card);
+}
+.sess-h{
+  padding:9px 12px;
+  background:linear-gradient(90deg,var(--soft),transparent);
+}
+.sess-h .t{font-weight:800}
+.ln{
+  padding:11px 12px;
+  border-top-color:var(--line);
+  transition:background .15s ease;
+}
+.ln:hover{background:rgba(255,255,255,.018)}
+.ln .bar{height:3px;border-radius:0 3px 3px 0}
+.q{font-size:17px;font-weight:850}
+.ln .buybtn{
+  border-radius:8px;
+  box-shadow:0 4px 12px rgba(255,23,99,.16);
+}
+.meta{
+  padding-top:2px;
+}
+.hist{
+  background:var(--soft);
+  border-top:1px dashed var(--line);
+}
+
+/* status border refinements */
+.m.st-ok{border-left-color:var(--ok)}
+.m.st-low{border-left-color:var(--warn)}
+.m.st-so{border-left-color:var(--no)}
+
+/* ---------- feed ---------- */
+.fi{
+  padding:9px 0;
+  border-top-color:var(--line);
+}
+.fi:hover{background:rgba(255,255,255,.018)}
+.fi .btn{border-radius:8px}
+
+/* ---------- analytics / heatmap ---------- */
+.card{padding:14px 16px}
+.card h2,.help summary{font-weight:800}
+.hm-wrap{padding:13px}
+.hmc{border-radius:8px}
+.hmv{font-weight:800}
+table.hm{border-spacing:4px}
+.hm th{padding:3px 5px}
+.hm-n{font-weight:750}
+
+/* ---------- toast / floating controls ---------- */
+.toast{
+  border:1px solid rgba(255,255,255,.08);
+  background:#171c29;
+  color:#fff;
+  padding:10px 14px;
+  border-radius:12px;
+  box-shadow:0 12px 35px rgba(0,0,0,.28);
+}
+#top{
+  width:42px;height:42px;
+  border-radius:13px;
+  background:var(--card);
+  box-shadow:var(--shadow);
+}
+
+/* ---------- loading ---------- */
+.sk{
+  height:82px;
+  border:1px solid var(--line);
+  background:linear-gradient(90deg,var(--soft),var(--card2),var(--soft));
+  background-size:200% 100%;
+  animation:radarShimmer 1.4s ease-in-out infinite;
+}
+@keyframes radarShimmer{
+  0%{background-position:200% 0;opacity:.72}
+  100%{background-position:-200% 0;opacity:1}
+}
+
+/* ---------- compact mode ---------- */
+#list.compact .m{
+  border-radius:12px;
+}
+#list.compact .m>summary{
+  min-height:58px;
+}
+#list.compact .av.s{
+  border-width:1px;
+}
+
+/* ---------- mobile ---------- */
+@media(max-width:800px){
+  header{padding:11px 12px}
+  header>.row:first-child{gap:7px}
+  h1{font-size:16px}
+  .sum{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .sum>div{min-height:82px;padding:13px}
+  .sum b{font-size:23px}
+  main{padding:12px 12px 150px}
+  .row+.row{margin-top:8px}
+  .tabs{width:100%;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{white-space:nowrap;padding:8px 10px}
+  .seg{margin-left:0}
+  #views{order:3}
+  input[type=search]{flex-basis:100%}
+}
+@media(max-width:600px){
+  #buy{display:none}
+  header{position:sticky;top:0;z-index:10}
+  .sum>div{border-radius:14px}
+  .m{border-radius:14px}
+  .m>summary{min-height:74px;padding:11px 10px}
+  .av.s{width:44px;height:44px}
+  .chips{max-width:100%;overflow:hidden;flex-wrap:nowrap}
+  .chip{font-size:11px}
+  .hero{gap:11px}
+  .hero .av.l{width:72px;height:96px}
+  .detail{padding:11px}
+  .ln{grid-template-columns:1fr auto auto auto;gap:7px}
+  .ln .pr{font-size:12px}
+  #bar{
+    background:color-mix(in srgb,var(--card) 92%,transparent);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    border-top:1px solid var(--line);
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  *,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+}
+
+
+/* =========================================================
+   COLLAPSIBLE TOP FILTER / NAV
+   Keeps all existing controls and IDs intact.
+   ========================================================= */
+#radarTopToggle{
+  min-width:116px;
+  min-height:40px;
+  padding:8px 13px;
+  border-radius:12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  font-weight:800;
+  color:var(--text);
+  background:linear-gradient(145deg,var(--card2),var(--card));
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 6px 18px rgba(0,0,0,.10);
+  cursor:pointer;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+#radarTopToggle:hover{
+  transform:translateY(-1px);
+  border-color:rgba(255,23,99,.48);
+  box-shadow:0 8px 22px rgba(255,23,99,.10),inset 0 1px 0 rgba(255,255,255,.04);
+}
+#radarTopToggle:active{transform:translateY(0) scale(.98)}
+#radarTopToggle.is-open{
+  color:#fff;
+  border-color:rgba(255,23,99,.62);
+  background:linear-gradient(135deg,rgba(255,23,99,.20),rgba(255,23,99,.07));
+  box-shadow:0 8px 24px rgba(255,23,99,.13),0 0 0 1px rgba(255,23,99,.08) inset;
+}
+.radar-toggle-icon{
+  width:18px;height:18px;position:relative;display:inline-block;flex:0 0 18px;
+}
+.radar-toggle-icon:before,
+.radar-toggle-icon:after{
+  content:"";position:absolute;left:1px;width:16px;height:2px;border-radius:3px;background:currentColor;
+}
+.radar-toggle-icon:before{top:5px;box-shadow:0 6px 0 currentColor}
+.radar-toggle-icon:after{
+  width:5px;height:5px;left:5px;top:3px;
+  background:var(--card2);border:2px solid currentColor;box-sizing:border-box;
+  box-shadow:5px 6px 0 -1px var(--card2),5px 6px 0 1px currentColor;
+}
+#radarTopToggle.is-open .radar-toggle-icon:after{background:rgba(255,23,99,.08)}
+.radar-toggle-chevron{
+  width:8px;height:8px;margin-top:-4px;
+  border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(45deg);transition:transform .25s ease;
+}
+#radarTopToggle.is-open .radar-toggle-chevron{transform:rotate(225deg);margin-top:4px}
+#radarTopToggle .radar-toggle-count{
+  min-width:19px;height:19px;padding:0 5px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:10px;background:rgba(255,255,255,.07);color:var(--mut);
+}
+#radarTopToggle.is-open .radar-toggle-count{background:rgba(255,23,99,.18);color:#fff}
+#radarTopContent{
+  display:grid;
+  grid-template-rows:1fr;
+  transition:grid-template-rows .32s ease,opacity .25s ease,transform .32s ease,margin-top .32s ease;
+  transform-origin:top;
+}
+#radarTopContent>.radar-top-inner{min-height:0;overflow:hidden}
+#radarTopContent.is-closed{
+  grid-template-rows:0fr;
+  opacity:0;
+  transform:translateY(-7px);
+  pointer-events:none;
+  margin-top:-10px;
+}
+#radarTopContent.is-open{opacity:1;transform:none}
+#radarTopContent>.radar-top-inner>.row:first-child{margin-top:10px}
+@media(max-width:800px){
+  #radarTopToggle{min-width:104px;padding:8px 10px}
+  #radarTopToggle .radar-toggle-count{display:none}
+}
+@media(max-width:600px){
+  #radarTopToggle{font-size:12px;min-height:38px}
+}
+
+
+/* =========================================================
+   RADAR INTELLIGENCE — TIMELINE / ALERT CENTER / AUTO BUY
+   ========================================================= */
+.radar-intel{display:grid;grid-template-columns:1.25fr .95fr;gap:12px;margin:12px 0}
+.radar-panel{background:linear-gradient(145deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.radar-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}
+.radar-panel-title{display:flex;align-items:center;gap:9px;font-weight:850}
+.radar-panel-title .live-dot{width:8px;height:8px;border-radius:50%;background:#20e08a;box-shadow:0 0 0 5px rgba(32,224,138,.09),0 0 15px rgba(32,224,138,.45);animation:radarPulse 1.5s infinite}
+@keyframes radarPulse{50%{opacity:.45;transform:scale(.78)}}
+.radar-panel-count{font-size:11px;color:var(--mut);font-weight:750}
+.radar-panel-body{padding:10px 12px}
+.radar-scroll{max-height:350px;overflow:auto;scrollbar-width:thin}
+.radar-feed-item{display:grid;grid-template-columns:56px 1fr auto;gap:9px;align-items:center;padding:10px 7px;border-bottom:1px solid var(--line);cursor:pointer}
+.radar-feed-item:last-child{border-bottom:0}.radar-feed-item:hover{background:rgba(255,255,255,.025)}
+.radar-feed-time{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+.radar-feed-main{min-width:0}.radar-feed-main b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radar-feed-meta{font-size:11px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radar-delta{font-weight:900;color:var(--ok);font-size:13px}
+.radar-mini-buy{padding:6px 8px!important;border-radius:9px!important;font-size:11px!important}
+.radar-empty{padding:25px 10px;text-align:center;color:var(--mut);font-size:12px}
+.radar-alert-tools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+.radar-alert-tools input,.radar-alert-tools select{min-width:0;flex:1 1 120px}
+.radar-alert-item{border:1px solid var(--line);border-radius:12px;padding:10px;margin:7px 0;background:rgba(255,255,255,.018);position:relative;overflow:hidden}
+.radar-alert-item:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ok)}
+.radar-alert-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.radar-alert-name{font-weight:850}.radar-alert-badge{font-size:10px;font-weight:850;border-radius:999px;padding:3px 7px;background:rgba(255,23,99,.11);color:var(--acc)}
+.radar-alert-meta{font-size:11px;color:var(--mut);margin:5px 0 9px;line-height:1.45}
+.radar-alert-actions{display:flex;gap:6px;flex-wrap:wrap}.radar-alert-actions .btn{font-size:11px;padding:6px 9px;border-radius:8px}
+.radar-buy{border:1px solid rgba(255,23,99,.22);background:linear-gradient(145deg,rgba(255,23,99,.10),rgba(255,23,99,.035))}
+.radar-buy-list{display:grid;gap:8px}
+.radar-buy-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.018)}
+.radar-buy-info b{display:block}.radar-buy-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;color:var(--acc);margin-top:4px}
+.radar-buy-meta{font-size:11px;color:var(--mut);margin-top:3px}.radar-buy-actions{display:flex;gap:5px}
+.radar-buy-actions .btn{padding:7px 9px;border-radius:8px;font-size:11px}
+.radar-intel-more{margin-top:9px;width:100%;justify-content:center}
+@media(max-width:900px){.radar-intel{grid-template-columns:1fr}.radar-scroll{max-height:280px}}
+@media(max-width:600px){.radar-intel{gap:9px}.radar-panel-head{padding:11px}.radar-panel-body{padding:9px}.radar-feed-item{grid-template-columns:48px 1fr auto;padding:9px 4px}.radar-buy-item{grid-template-columns:1fr}.radar-buy-actions{justify-content:flex-start}.radar-alert-tools input,.radar-alert-tools select{flex-basis:100%}}
+
+
+/* =========================================================
+   RADAR COMMAND CENTER — ENHANCEMENT PACK
+   Visual + client-side features only. Existing IDs/JS untouched.
+   ========================================================= */
+.radar-command{
+  display:grid;
+  grid-template-columns:minmax(220px,1.05fr) repeat(4,minmax(130px,.7fr)) auto;
+  gap:9px;
+  margin:-2px 0 12px;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:
+    linear-gradient(135deg,rgba(255,23,99,.08),transparent 38%),
+    linear-gradient(145deg,var(--card),var(--card2));
+  box-shadow:var(--shadow);
+}
+.radar-command-brand{
+  min-width:0;padding:8px 10px;display:flex;align-items:center;gap:10px;
+  border-radius:12px;background:rgba(255,255,255,.018);
+}
+.radar-command-orb{
+  width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  color:#fff;font-size:16px;font-weight:900;
+  background:linear-gradient(135deg,#ff1763,#ff5a91);
+  box-shadow:0 8px 22px rgba(255,23,99,.25);
+}
+.radar-command-brand b{display:block;font-size:13px}
+.radar-command-brand span{display:block;color:var(--mut);font-size:10px;margin-top:2px}
+.radar-metric{
+  position:relative;min-width:0;padding:9px 11px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(255,255,255,.014);overflow:hidden;
+}
+.radar-metric:after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:linear-gradient(90deg,var(--acc),transparent);opacity:.65;
+}
+.radar-metric-label{
+  display:flex;align-items:center;gap:5px;color:var(--mut);
+  font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:800;
+}
+.radar-metric-value{
+  display:block;margin-top:4px;font-size:16px;font-weight:900;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;
+}
+.radar-metric-sub{display:block;color:var(--mut);font-size:10px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radar-live-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(34,199,122,.08);animation:radarPulse 1.5s infinite}
+.radar-command-actions{display:flex;align-items:center;gap:6px}
+.radar-command-actions .btn{height:100%;min-height:52px;border-radius:12px;font-weight:800}
+.radar-command-actions .btn.focus-on{background:rgba(255,23,99,.13);border-color:rgba(255,23,99,.5);color:#fff}
+.radar-command-actions .btn.radar-hot-action{background:linear-gradient(135deg,#ff1763,#e80f58);border-color:#ff1763;color:#fff;box-shadow:0 7px 18px rgba(255,23,99,.18)}
+
+.radar-hot{
+  margin:0 0 12px;padding:12px 13px;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(145deg,var(--card),var(--card2));box-shadow:var(--shadow);
+}
+.radar-hot-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.radar-hot-title{display:flex;align-items:center;gap:8px;font-weight:900}
+.radar-hot-title .fire{filter:drop-shadow(0 0 8px rgba(255,23,99,.4))}
+.radar-hot-note{font-size:10px;color:var(--mut)}
+.radar-hot-list{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.radar-hot-item{
+  min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(255,255,255,.018);cursor:pointer;transition:.16s ease;
+}
+.radar-hot-item:hover{transform:translateY(-2px);border-color:rgba(255,23,99,.42);background:rgba(255,23,99,.045)}
+.radar-hot-top{display:flex;align-items:center;gap:7px}
+.radar-hot-rank{
+  width:21px;height:21px;border-radius:7px;display:grid;place-items:center;
+  background:var(--soft);color:var(--mut);font-size:10px;font-weight:900;flex:none;
+}
+.radar-hot-item:nth-child(1) .radar-hot-rank{background:rgba(255,23,99,.16);color:var(--acc)}
+.radar-hot-name{font-size:12px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radar-hot-meta{display:flex;justify-content:space-between;gap:7px;margin-top:7px;font-size:10px;color:var(--mut)}
+.radar-hot-meta strong{color:var(--ok);font-weight:900}
+.radar-hot-bar{height:3px;background:var(--soft);border-radius:99px;margin-top:7px;overflow:hidden}
+.radar-hot-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--acc),#ff78a6)}
+
+.radar-focus header .row:first-child #radarTopToggle{display:none}
+.radar-focus #radarTopContent,
+.radar-focus .help,
+.radar-focus #feedBox,
+.radar-focus .radar-intel-more,
+.radar-focus .radar-buy{display:none!important}
+.radar-focus main{max-width:1320px;padding-top:12px}
+.radar-focus .radar-command{margin-bottom:10px}
+.radar-focus .radar-hot{margin-bottom:10px}
+.radar-focus #list .m{box-shadow:0 12px 30px rgba(0,0,0,.22)}
+.radar-focus #list{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:1050px){
+  .radar-command{grid-template-columns:1.4fr repeat(2,1fr) repeat(2,1fr) auto}
+  .radar-command-brand{grid-row:span 2}
+  .radar-hot-list{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:900px){
+  .radar-command{grid-template-columns:repeat(2,1fr)}
+  .radar-command-brand{grid-column:1/-1}
+  .radar-command-actions{grid-column:1/-1}
+  .radar-command-actions .btn{min-height:42px;flex:1}
+  .radar-hot-list{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:600px){
+  .radar-command{grid-template-columns:repeat(2,1fr);padding:8px;margin-bottom:9px;border-radius:14px}
+  .radar-command-brand{grid-column:1/-1}
+  .radar-metric{padding:8px 9px}
+  .radar-metric-value{font-size:15px}
+  .radar-hot{padding:10px;border-radius:14px}
+  .radar-hot-list{display:flex;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .radar-hot-list::-webkit-scrollbar{display:none}
+  .radar-hot-item{min-width:145px}
+  .radar-focus #list{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  .radar-hot-item{transition:none}
+  .radar-live-dot{animation:none}
+}
+
+
+/* =========================================================
+   RADAR SUITE 12 FEATURES
+   ========================================================= */
+.r12-wrap{display:grid;gap:12px;margin:12px 0}
+.r12-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
+.r12-card{grid-column:span 4;background:linear-gradient(145deg,var(--card),color-mix(in srgb,var(--card) 82%,var(--acc)));border:1px solid var(--line);border-radius:14px;padding:13px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.r12-card.wide{grid-column:span 8}.r12-card.full{grid-column:1/-1}
+.r12-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:700}.r12-sub{color:var(--mut);font-size:12px;margin-top:2px}.r12-kpi{font-size:26px;font-weight:800;margin-top:8px}.r12-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.r12-list{display:grid;gap:7px;margin-top:10px;max-height:260px;overflow:auto}.r12-row{border:1px solid var(--line);background:color-mix(in srgb,var(--card) 86%,var(--soft));border-radius:10px;padding:9px;cursor:pointer}.r12-row:hover{border-color:var(--acc);transform:translateY(-1px)}
+.r12-score{font-weight:800;padding:3px 8px;border-radius:99px;background:var(--soft);font-size:11px}.r12-score.hot{color:var(--no);border:1px solid var(--no)}
+.r12-bar{height:7px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:7px}.r12-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),#ff6b9a);border-radius:99px}
+.r12-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.r12-mini{padding:9px;border:1px solid var(--line);border-radius:10px}.r12-mini b{display:block;font-size:17px}.r12-mini span{font-size:11px;color:var(--mut)}
+.r12-input{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:9px;padding:8px;font:inherit}
+.r12-select{width:100%;margin-top:7px}.r12-check{font-size:12px;color:var(--mut);display:flex;gap:6px;align-items:center}
+.r12-empty{padding:16px;text-align:center;color:var(--mut);border:1px dashed var(--line);border-radius:10px}
+.r12-countdown{font-size:34px;font-weight:900;letter-spacing:.04em}.r12-window{color:var(--warn);font-size:12px;font-weight:700}.r12-watch{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.r12-rank{display:flex;align-items:center;gap:8px}.r12-ranknum{width:25px;height:25px;border-radius:8px;background:var(--soft);display:grid;place-items:center;font-weight:800}
+.r12-flash{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(5,7,12,.72);backdrop-filter:blur(10px);padding:20px}.r12-flash.on{display:flex}.r12-flash-box{width:min(560px,100%);border:1px solid color-mix(in srgb,var(--acc) 70%,white);background:var(--card);border-radius:22px;padding:22px;box-shadow:0 30px 100px rgba(0,0,0,.5);animation:r12pop .22s ease-out}.r12-flash-title{font-size:13px;color:var(--acc);font-weight:800;letter-spacing:.08em}.r12-flash-member{font-size:30px;font-weight:900;margin:6px 0}.r12-flash-meta{color:var(--mut)}.r12-flash-ticket{font-size:48px;font-weight:900;margin:12px 0}.r12-flash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.r12-flash-grid .btn{justify-content:center;min-height:44px}
+.r12-mobile{display:none}.r12-mobile.on{display:block;position:fixed;inset:0;z-index:9990;background:var(--bg);padding:calc(12px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));overflow:auto}.r12-mobile-card{border:1px solid var(--line);border-radius:18px;background:var(--card);padding:18px;margin-top:12px}.r12-mobile-buy{width:100%;justify-content:center;font-size:17px;padding:13px!important;background:var(--acc);color:#fff;border-color:var(--acc)}
+.r12-rule{border:1px solid var(--line);border-radius:10px;padding:9px;display:grid;gap:6px}.r12-rule-head{display:flex;justify-content:space-between;gap:8px}.r12-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px}.r12-rule-actions{display:flex;gap:5px}
+.radar-focus .r12-wrap{display:none!important}.radar-focus #radarCommand,.radar-focus #radarHot{display:block}.radar-focus .radar-intel{grid-template-columns:1fr}.radar-focus .radar-intel>.radar-panel:nth-child(2){display:none}.radar-focus #list{grid-template-columns:1fr}.radar-focus header .radar-top-inner{display:none}
+@keyframes r12pop{from{transform:scale(.94);opacity:0}to{transform:scale(1);opacity:1}}
+@media(max-width:900px){.r12-card,.r12-card.wide{grid-column:span 6}}
+@media(max-width:600px){.r12-grid{grid-template-columns:1fr}.r12-card,.r12-card.wide{grid-column:1/-1}.r12-grid2{grid-template-columns:1fr 1fr}.r12-flash-member{font-size:24px}.r12-flash-ticket{font-size:38px}}
 </style>
-
-{% set jkt_api = state["groups"]["JKT48"] %}
-{% set akb_api = state["groups"]["AKB48"] %}
-
-<header class="topbar">
-  <div><div class="eyebrow">48GROUP</div><h1>2-Shot Monitor</h1></div>
-  <div class="top-actions">
-    <span class="pill {% if state.running %}ok{% else %}bad{% endif %}">{% if state.running %}● MONITOR ON{% else %}● STOPPED{% endif %}</span>
-    <span class="muted">@{{ user.username }}</span>
-    <form method="post" action="/logout"><button class="ghost">Keluar</button></form>
+<style>
+/* ===== Feature visibility manager ===== */
+.r12-display{margin:14px 0 10px;background:linear-gradient(145deg,rgba(20,25,39,.96),rgba(14,18,29,.96));border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.r12-display-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 15px}
+.r12-display-title{font-weight:900;font-size:14px;letter-spacing:.1px}
+.r12-display-sub{font-size:11px;color:var(--mut);margin-top:3px}
+.r12-display-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.r12-display-actions .btn{font-size:11px;padding:7px 10px}
+.r12-display-toggle{border-color:rgba(255,23,103,.42)!important;background:rgba(255,23,103,.08)!important}
+.r12-feature-controls{display:flex;flex-wrap:wrap;gap:7px;padding:0 15px 13px;border-top:1px solid transparent;transition:.2s ease}
+.r12-feature-controls.is-collapsed{display:none}
+.r12-feature-switch{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025);font-size:11px;font-weight:750;color:var(--mut);cursor:pointer;user-select:none;transition:.18s ease}
+.r12-feature-switch:hover{border-color:rgba(255,23,103,.38);color:var(--txt);transform:translateY(-1px)}
+.r12-feature-switch input{accent-color:#ff1767;width:14px;height:14px;margin:0}
+.r12-feature-switch:has(input:checked){color:var(--txt);background:rgba(255,23,103,.08);border-color:rgba(255,23,103,.38)}
+.r12-feature-card.is-hidden{display:none!important}
+.r12-visibility-block.is-hidden{display:none!important}
+.r12-wrap.r12-none{display:none!important}
+@media(max-width:760px){
+  .r12-display-head{align-items:flex-start;flex-direction:column}
+  .r12-display-actions{width:100%;justify-content:flex-start}
+  .r12-display-actions .btn{flex:1 1 auto}
+  .r12-feature-controls{padding-top:2px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>🎫 JKT48 <b>Ticket Radar</b></h1>
+    <span id="status" class="pill">memuat…</span>
+    <button class="btn sq" id="refresh" title="Muat ulang sekarang" aria-label="Muat ulang">⟳</button>
+    <button class="btn sq" id="theme" title="Ganti tema" aria-label="Ganti tema">🌓</button>
+    <a class="btn" id="buy" target="_blank" rel="noopener" title="Buka halaman pembelian di jkt48.com"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h9.4a1 1 0 0 0 1-.8L20 8H6.2M9 20h.01M17 20h.01"/></svg>Beli tiket</a>
+    <button class="btn" id="radarTopToggle" type="button" aria-expanded="true" aria-controls="radarTopContent" title="Buka/tutup panel navigasi dan filter">
+      <span class="radar-toggle-icon" aria-hidden="true"></span>
+      <span id="radarTopToggleText">Filter</span>
+      <span class="radar-toggle-count" id="radarTopToggleCount">8</span>
+      <span class="radar-toggle-chevron" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div id="radarTopContent" class="is-open">
+    <div class="radar-top-inner">
+      <div class="row"><div class="tabs" id="tabs"></div><div class="tabs seg" id="views" role="group" aria-label="Tampilan"></div></div>
+      <div class="row">
+        <input type="search" id="q" placeholder="Cari member…" aria-label="Cari member">
+    <select id="sort" title="Urutkan" aria-label="Urutkan">
+      <option value="avail">Urut: tersedia dulu</option>
+      <option value="tix">Urut: tiket terbanyak</option>
+      <option value="name">Urut: nama A–Z</option>
+      <option value="recent">Urut: restock terbaru</option>
+      <option value="speed">Urut: terjual tercepat</option>
+    </select>
+    <select id="date" title="Tanggal" aria-label="Filter tanggal"><option value="">Semua tanggal</option></select>
+    <select id="lane" title="Jalur" aria-label="Filter jalur"><option value="">Semua jalur</option></select>
+    <select id="price" title="Harga" aria-label="Filter harga"><option value="">Semua harga</option></select>
+      </div>
+      <div class="row"><div class="opts">
+    <label class="pill"><input type="checkbox" id="only"> hanya tersedia</label>
+    <label class="pill"><input type="checkbox" id="favOnly"> ⭐ favorit saja</label>
+    <label class="pill"><input type="checkbox" id="vipOnly"> ★ VIP saja</label>
+    <label class="pill"><input type="checkbox" id="hotOnly"> ▲ restock baru</label>
+    <label class="pill"><input type="checkbox" id="compact"> ☰ kompak</label>
+    <label class="pill"><input type="checkbox" id="beep"> 🔔 suara</label>
+    <label class="pill"><input type="checkbox" id="notif"> 📲 notifikasi</label>
+    <label class="pill"><input type="checkbox" id="wake"> 🔆 layar nyala</label>
+    <button class="btn" id="toggleAll" style="padding:3px 10px;font-size:12px">Buka semua</button>
+      </div></div>
+    </div>
   </div>
 </header>
+<main>
+  <div class="alert" id="staleBanner" role="alert" hidden></div>
+  <div class="help" id="pollBanner" hidden></div>
 
-{% if message %}<div class="alert success">{{ message }}</div>{% endif %}
-{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
-
-<section class="grid two">
-  <article class="card">
-    <div class="card-head"><h2>JKT48</h2><span class="api-badge api-{{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span></div>
-    <div class="stats">
-      <div><strong>{{ jkt.available }}</strong><span>Tersedia</span></div>
-      <div><strong>{{ jkt.sold_out }}</strong><span>Sold out</span></div>
-      <div><strong>{{ jkt.total }}</strong><span>Total slot</span></div>
-    </div>
-    <div class="group-meta">
-      <span>Origin HTTP <b>{{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></span>
-      <span>Last live <b>{{ jkt_api.last_success or "Belum ada" }}</b></span>
-    </div>
-    {% if jkt_api.status != "live" %}<div class="api-note">Menampilkan cache terakhir. {{ jkt_api.error or "" }}</div>{% endif %}
-  </article>
-
-  <article class="card">
-    <div class="card-head"><h2>AKB48</h2><span class="api-badge api-{{ akb_api.status }}">● {{ akb_api.status|upper }}</span></div>
-    <div class="stats">
-      <div><strong>{{ akb.available }}</strong><span>Tersedia</span></div>
-      <div><strong>{{ akb.sold_out }}</strong><span>Sold out</span></div>
-      <div><strong>{{ akb.total }}</strong><span>Total slot</span></div>
-    </div>
-    <div class="group-meta">
-      <span>Origin HTTP <b>{{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></span>
-      <span>Last live <b>{{ akb_api.last_success or "Belum ada" }}</b></span>
-    </div>
-    {% if akb_api.status != "live" %}<div class="api-note">Menampilkan cache terakhir. {{ akb_api.error or "" }}</div>{% endif %}
-  </article>
-</section>
-
-<section class="card statusbar">
-  <div class="status-grid">
-    <div class="status-item"><span class="muted">Last collector feed</span><b>{{ state.collector_last_seen or "Belum ada" }}</b></div>
-    <div class="status-item"><span class="muted">Last live data</span><b>{{ state.last_success or "Belum ada" }}</b></div>
-    <div class="status-item"><span class="muted">Schedule</span><b>08:00 • 12:00 • 20:00 WIB</b></div>
+  <div class="sum">
+    <div><b id="s-mem">-</b><span>member</span></div>
+    <div><b id="s-ses">-</b><span>sesi (tersedia / total)</span></div>
+    <div><b id="s-av">-</b><span>jalur tersedia</span></div>
+    <div><b id="s-tix">-</b><span>total tiket tersisa</span></div>
   </div>
-  {% if jkt_api.status == "live" and akb_api.status == "live" %}
-    <div class="api-summary good">✓ Local collector terhubung. JKT48 dan AKB48 sedang LIVE. Restock dapat langsung dideteksi.</div>
-  {% elif jkt_api.status == "error" or akb_api.status == "error" %}
-    <div class="api-summary bad">Collector terhubung tetapi ada sumber data yang gagal, atau belum ada cache yang dapat digunakan.</div>
-  {% else %}
-    <div class="api-summary warn">⚠ Sebagian data menggunakan cache. Pastikan collector.py di PC lokal sedang berjalan.</div>
-  {% endif %}
-</section>
 
-<section class="feature-grid">
-  <article class="card">
-    <div class="card-head">
+  <section class="radar-command r12-visibility-block" data-feature-block="command" id="radarCommand" aria-label="Radar Command Center">
+    <div class="radar-command-brand">
+      <div class="radar-command-orb">✦</div>
       <div>
-        <h2>🎯 Member Sniping</h2>
-        <p class="muted">Pilih member incaran. Saat member target restock, alert Discord untuk akun Anda akan diberi penanda khusus 🎯.</p>
+        <b>Radar Command Center</b>
+        <span>monitoring real-time · smart insights</span>
+      </div>
+    </div>
+    <div class="radar-metric">
+      <span class="radar-metric-label"><i class="radar-live-dot"></i> Status</span>
+      <b class="radar-metric-value" id="rcStatus">LIVE</b>
+      <span class="radar-metric-sub" id="rcUpdated">memuat data…</span>
+    </div>
+    <div class="radar-metric">
+      <span class="radar-metric-label">↗ Restock</span>
+      <b class="radar-metric-value" id="rcRestock">0</b>
+      <span class="radar-metric-sub">event · 10 menit</span>
+    </div>
+    <div class="radar-metric">
+      <span class="radar-metric-label">🔥 Hot member</span>
+      <b class="radar-metric-value" id="rcHot">—</b>
+      <span class="radar-metric-sub" id="rcHotSub">menunggu data</span>
+    </div>
+    <div class="radar-metric">
+      <span class="radar-metric-label">⚡ Velocity</span>
+      <b class="radar-metric-value" id="rcVelocity">—</b>
+      <span class="radar-metric-sub">tiket/menit</span>
+    </div>
+    <div class="radar-metric">
+      <span class="radar-metric-label">⏱ Next poll</span>
+      <b class="radar-metric-value" id="rcNext">10s</b>
+      <span class="radar-metric-sub">auto refresh</span>
+    </div>
+    <div class="radar-command-actions">
+      <button class="btn" id="rcFocus" type="button" title="Fokus ke kartu tiket">◉ Focus</button>
+      <button class="btn radar-hot-action" id="rcTop" type="button" title="Kembali ke bagian atas">↑ Top</button>
+    </div>
+  </section>
+
+  <section class="radar-hot r12-visibility-block" data-feature-block="hotpicks" id="radarHot" aria-label="Smart Hot Picks">
+    <div class="radar-hot-head">
+      <div class="radar-hot-title"><span class="fire">🔥</span> Smart Hot Picks</div>
+      <span class="radar-hot-note">ranking berdasarkan kuota + restock terbaru + velocity</span>
+    </div>
+    <div class="radar-hot-list" id="radarHotList">
+      <div class="radar-empty">Menganalisis data radar…</div>
+    </div>
+  </section>
+
+
+
+
+  <section class="r12-display" id="r12Display" aria-label="Pengaturan tampilan fitur baru">
+    <div class="r12-display-head">
+      <div>
+        <div class="r12-display-title">⚙️ Tampilan Fitur Baru</div>
+        <div class="r12-display-sub">Pilih fitur mana yang ingin ditampilkan. Pengaturan tersimpan otomatis di browser ini.</div>
+      </div>
+      <div class="r12-display-actions">
+        <button class="btn r12-display-preset" type="button" data-preset="all">Semua</button>
+        <button class="btn r12-display-preset" type="button" data-preset="hunting">Hunting</button>
+        <button class="btn r12-display-preset" type="button" data-preset="compact">Ringkas</button>
+        <button class="btn r12-display-preset" type="button" data-preset="none">Sembunyikan</button>
+        <button class="btn r12-display-toggle" id="r12DisplayToggle" type="button" aria-expanded="true">⚙ Atur fitur</button>
+      </div>
+    </div>
+    <div class="r12-feature-controls" id="r12FeatureControls">
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="command" checked><span>🎛 Command Center</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="hotpicks" checked><span>🔥 Smart Hot Picks</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="timeline" checked><span>📡 Live Timeline</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="alertcenter" checked><span>🚨 Alert Center</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="autobuy" checked><span>🛒 Auto Buy</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="heat" checked><span>🔥 Heat Score</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="watchlist" checked><span>🎯 Watchlist</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="intelligence" checked><span>🧠 Intelligence</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="countdown" checked><span>⏱ Countdown</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="war" checked><span>⚔ War Mode</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="mobile" checked><span>📱 Mobile</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="history" checked><span>📈 History</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="ranking" checked><span>🏆 Ranking</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="alerts" checked><span>🔔 Alerts</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="recommendation" checked><span>🎯 Recommendation</span></label>
+      <label class="r12-feature-switch"><input type="checkbox" data-feature-toggle="bookmarks" checked><span>💾 Bookmarks</span></label>
+    </div>
+  </section>
+
+  <section class="r12-wrap" id="radarSuite" aria-label="Radar Suite 12 fitur">
+    <div class="r12-grid">
+      <div class="r12-card wide r12-feature-card" data-feature="heat">
+        <div class="r12-title"><span>🔥 Restock Heat Score</span><span class="r12-score" id="r12TopScore">—</span></div>
+        <div class="r12-sub">Skor 0–100 berdasarkan kuota, recency, velocity, VIP, favorit, dan intensitas restock.</div>
+        <div class="r12-list" id="r12Scores"><div class="r12-empty">Menganalisis radar…</div></div>
+      </div>
+      <div class="r12-card r12-feature-card" data-feature="watchlist">
+        <div class="r12-title"><span>🎯 Watchlist</span><span id="r12WatchCount">0</span></div>
+        <div class="r12-sub">Prioritas member yang ingin diburu.</div>
+        <div class="r12-actions"><input class="r12-input" id="r12WatchInput" placeholder="Tambah member…"><button class="btn" id="r12WatchAdd">+ Tambah</button></div>
+        <div class="r12-list" id="r12WatchList"><div class="r12-empty">Belum ada watchlist.</div></div>
+      </div>
+      <div class="r12-card wide r12-feature-card" data-feature="intelligence">
+        <div class="r12-title"><span>🧠 Member Intelligence</span><button class="btn" id="r12MemberFocus">Filter kartu</button></div>
+        <select class="r12-input r12-select" id="r12MemberSelect"><option value="">Pilih member…</option></select>
+        <div class="r12-grid2" id="r12MemberStats" style="margin-top:8px"><div class="r12-mini"><b>—</b><span>pilih member</span></div></div>
+        <div class="r12-list" id="r12MemberHistory"></div>
+      </div>
+      <div class="r12-card r12-feature-card" data-feature="countdown">
+        <div class="r12-title"><span>⏱ Restock Countdown</span><span class="r12-window" id="r12Window">—</span></div>
+        <div class="r12-countdown" id="r12Countdown">--:--:--</div>
+        <div class="r12-sub" id="r12NextSession">Mencari sesi berikutnya…</div>
+        <div class="r12-actions"><button class="btn" id="r12CountdownFocus">Lihat sesi</button></div>
+      </div>
+      <div class="r12-card r12-feature-card" data-feature="war">
+        <div class="r12-title"><span>⚔ War Mode 2.0</span><span id="r12WarState">READY</span></div>
+        <div class="r12-sub">Mode hunting agresif untuk watchlist + VIP + restock baru.</div>
+        <div class="r12-grid2" style="margin-top:9px"><div class="r12-mini"><b id="r12WarTargets">0</b><span>target</span></div><div class="r12-mini"><b id="r12WarPoll">10s</b><span>polling</span></div></div>
+        <div class="r12-actions"><button class="btn" id="r12WarToggle">⚔ Aktifkan War</button><button class="btn" id="r12OpenTargets">Buka target</button></div>
+      </div>
+      <div class="r12-card r12-feature-card" data-feature="mobile">
+        <div class="r12-title"><span>📱 Mobile Hunting</span><span>ONE TAP</span></div>
+        <div class="r12-sub">Tampilan khusus HP: restock → member → beli.</div>
+        <div class="r12-actions"><button class="btn" id="r12MobileOpen">Buka Mobile Hunting</button></div>
+      </div>
+      <div class="r12-card wide r12-feature-card" data-feature="history">
+        <div class="r12-title"><span>📈 Restock History</span><button class="btn" id="r12HistoryClear">Bersihkan</button></div>
+        <div class="r12-sub">Riwayat disimpan lokal di browser perangkat ini.</div>
+        <div class="r12-list" id="r12History"><div class="r12-empty">Belum ada riwayat.</div></div>
+      </div>
+      <div class="r12-card r12-feature-card" data-feature="ranking">
+        <div class="r12-title"><span>🏆 Member Ranking</span><span>LIVE</span></div>
+        <div class="r12-list" id="r12Ranking"><div class="r12-empty">Menghitung ranking…</div></div>
+      </div>
+      <div class="r12-card wide r12-feature-card" data-feature="alerts">
+        <div class="r12-title"><span>🔔 Alert Rules</span><button class="btn" id="r12RuleAdd">+ Rule</button></div>
+        <div class="r12-sub">Aturan lokal untuk flash, suara, browser notification, dan Auto Buy Preparation.</div>
+        <div class="r12-list" id="r12Rules"><div class="r12-empty">Belum ada rule.</div></div>
+      </div>
+      <div class="r12-card full r12-feature-card" data-feature="recommendation">
+        <div class="r12-title"><span>🎯 Smart Recommendation</span><span id="r12RecoBadge">AI-style scoring</span></div>
+        <div class="r12-sub">Prioritas hunting yang dihitung dari data radar saat ini.</div>
+        <div class="r12-grid" id="r12Reco"><div class="r12-empty" style="grid-column:1/-1">Belum ada rekomendasi.</div></div>
+      </div>
+      <div class="r12-card full r12-feature-card" data-feature="bookmarks">
+        <div class="r12-title"><span>💾 Session Bookmarks</span><button class="btn" id="r12BookmarkAdd">Bookmark sesi aktif</button></div>
+        <div class="r12-sub">Simpan sesi favorit untuk dibuka kembali kapan saja.</div>
+        <div class="r12-list" id="r12Bookmarks"><div class="r12-empty">Belum ada bookmark.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="r12-flash" id="r12Flash" role="dialog" aria-modal="true" aria-label="Restock terdeteksi">
+    <div class="r12-flash-box">
+      <div class="r12-flash-title">🚨 RESTOCK TERDETEKSI</div>
+      <div class="r12-flash-member" id="r12FlashMember">—</div>
+      <div class="r12-flash-meta" id="r12FlashMeta">—</div>
+      <div class="r12-flash-ticket" id="r12FlashTicket">+0</div>
+      <div class="r12-flash-meta" id="r12FlashScore">Heat Score —</div>
+      <div class="r12-flash-grid" style="margin-top:14px"><button class="btn" id="r12FlashBuy">🛒 BELI SEKARANG</button><button class="btn" id="r12FlashPrep">⚡ SIAPKAN BELI</button></div>
+      <div class="r12-actions"><button class="btn" id="r12FlashWatch">⭐ Watchlist</button><button class="btn" id="r12FlashClose">Tutup</button></div>
+    </div>
+  </div>
+
+  <div class="r12-mobile" id="r12Mobile">
+    <div class="r12-title"><span>📱 MOBILE HUNTING</span><button class="btn" id="r12MobileClose">Tutup</button></div>
+    <div class="r12-mobile-card" id="r12MobileCard"><div class="r12-empty">Menunggu restock…</div></div>
+    <div class="r12-mobile-card"><div class="r12-title"><span>Watchlist</span><span id="r12MobileWatch">0</span></div><div class="r12-list" id="r12MobileWatchList"></div></div>
+  </div>
+  <section class="radar-intel" aria-label="Radar Intelligence">
+    <div class="radar-panel r12-visibility-block" data-feature-block="timeline">
+      <div class="radar-panel-head">
+        <div class="radar-panel-title"><span class="live-dot"></span><span>Live Restock Timeline</span></div>
+        <span class="radar-panel-count" id="timelineCount">0 event</span>
+      </div>
+      <div class="radar-panel-body">
+        <div class="radar-scroll" id="liveTimeline"><div class="radar-empty">Menunggu restock baru…</div></div>
+        <button class="btn radar-intel-more" id="timelineMore" type="button">Lihat semua aktivitas</button>
       </div>
     </div>
 
-    <form method="post" action="/sniping" class="snipe-form">
-      <label>
-        Pilih member target
-        <select name="target" required>
-          <option value="" selected disabled>-- Pilih member --</option>
-          <optgroup label="JKT48">
-            {% for group, name in member_options if group == "JKT48" %}
-              <option value="{{ group }}|{{ name }}">{{ name }}</option>
-            {% endfor %}
-          </optgroup>
-          <optgroup label="AKB48">
-            {% for group, name in member_options if group == "AKB48" %}
-              <option value="{{ group }}|{{ name }}">{{ name }}</option>
-            {% endfor %}
-          </optgroup>
+    <div class="radar-panel r12-visibility-block" data-feature-block="alertcenter">
+      <div class="radar-panel-head">
+        <div class="radar-panel-title">🚨 Restock Alert Center</div>
+        <span class="radar-panel-count" id="alertCount">0 alert</span>
+      </div>
+      <div class="radar-panel-body">
+        <div class="radar-alert-tools">
+          <input type="search" id="alertMember" placeholder="Filter member…" aria-label="Filter alert member">
+          <select id="alertScope" aria-label="Filter alert"><option value="all">Semua alert</option><option value="vip">★ VIP</option><option value="fav">⭐ Favorit</option></select>
+          <select id="alertEvent" aria-label="Filter event"><option value="">Semua event</option></select>
+        </div>
+        <div class="radar-scroll" id="alertCenter"><div class="radar-empty">Belum ada alert.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="radar-panel radar-buy r12-visibility-block" data-feature-block="autobuy">
+    <div class="radar-panel-head">
+      <div class="radar-panel-title">🛒 Auto Buy Preparation <span class="radar-panel-count">siapkan halaman beli + kode sesi saat restock</span></div>
+      <button class="btn" id="clearBuyPrep" type="button">Bersihkan</button>
+    </div>
+    <div class="radar-panel-body">
+      <div class="radar-buy-list" id="buyPrepList"><div class="radar-empty">Belum ada sesi yang disiapkan.</div></div>
+    </div>
+  </section>
+
+  <details class="help" id="feedBox">
+    <summary><span>📈 Aktivitas restock <span id="fc" class="chip">0</span></span><button class="btn" id="feedClear" style="padding:0 8px;font-size:12px">Bersihkan</button></summary>
+    <div class="body" id="feed"></div>
+  </details>
+
+  <details class="help">
+    <summary>💾 Data favorit</summary>
+    <div class="body">
+      Favorit tersimpan di browser ini saja. Ekspor untuk cadangan atau pindah perangkat, lalu impor di perangkat lain (digabung dengan favorit yang sudah ada).
+      <div class="acts">
+        <button class="btn" id="favExport">⬇ Ekspor file</button>
+        <button class="btn" id="favCopy"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>Salin</button>
+        <button class="btn" id="favImport">⬆ Impor file</button>
+        <input type="file" id="favFile" accept=".json,application/json" hidden>
+      </div>
+    </div>
+  </details>
+
+  <details class="help">
+    <summary>ℹ️ Cara membaca dashboard</summary>
+    <div class="body"><dl>
+      <dt>Jalur</dt><dd>Satu slot tiket milik seorang member pada sebuah sesi.</dd>
+      <dt>Sesi</dt><dd>Satu jadwal (tanggal + jam). <b>tersedia/total</b> = sesi yang masih punya minimal satu jalur dengan kuota.</dd>
+      <dt>Kuota / SO</dt><dd>Jumlah tiket yang masih bisa dibeli. <b>SO</b> = sold out. Garis hijau tipis = kuota dibanding jalur terbanyak.</dd>
+      <dt>▲ restock</dt><dd>Latar hijau muda = kuota bertambah dalam 10 menit terakhir. Member dengan restock baru diberi label “▲ baru”.</dd>
+      <dt>⭐ Favorit</dt><dd>Ketuk bintang di kartu member. Favorit tampil paling atas dan tersimpan di perangkat ini.</dd>
+      <dt>★ VIP</dt><dd>Member prioritas notifikasi Discord.</dd>
+      <dt>📲 Notifikasi</dt><dd>Munculkan notifikasi browser saat restock (tab harus tetap terbuka).</dd>
+      <dt>● live</dt><dd>Data dimuat ulang tiap 10 detik. “Data lama” = poller server tidak mendapat data dari jkt48.com.</dd>
+      <dt>⚡ Kecepatan</dt><dd>Di bawah tiap jalur: laju tiket terjual per menit, jumlah terjual 10 menit / 1 jam terakhir, dan perkiraan habis. Pada jalur yang sudah SO: berapa lama bertahan sejak restock terakhir.</dd>
+      <dt>📉 Grafik</dt><dd>Ketuk sebuah jalur untuk melihat grafik riwayat kuotanya (hingga 24 jam) dan menyalin kode sesinya.</dd>
+      <dt>⏱ Restock terakhir</dt><dd>Label di kartu member: kapan terakhir kali kuotanya naik (tanpa batas 10 menit).</dd>
+      <dt>☰ Kompak</dt><dd>Satu baris per member, cocok untuk memantau banyak member di HP.</dd>
+      <dt>🔆 Layar nyala</dt><dd>Mencegah layar mati selama dashboard dibuka (jika browser mendukung).</dd>
+      <dt>🛒 Beli</dt><dd>Tombol “Beli tiket” di header, tombol “🛒 Beli” di tiap jalur yang masih ada kuota, ikon 🛒 di kartu member, serta toast, notifikasi, dan feed restock, semuanya membuka halaman pembelian event di jkt48.com.</dd>
+      <dt>🗺 Heatmap</dt><dd>Tombol “Heatmap” di atas: tabel member × sesi dengan warna sesuai kuota (hijau tersedia, kuning menipis ≤3, merah SO). Ketuk angka untuk beli, ketuk nama member untuk membuka kartunya.</dd>
+      <dt>Warna kartu</dt><dd>Garis kiri kartu: hijau = ada tiket, kuning = menipis (≤3 per jalur), merah = semua jalur SO.</dd>
+      <dt>Pasang di HP</dt><dd>Tambahkan ke layar utama lewat menu browser agar tampil layar penuh seperti aplikasi (butuh HTTPS).</dd>
+      <dt>🚨 Banner merah</dt><dd>Muncul bila data event tidak diperbarui. Angka di bawahnya bisa sudah basi; jangan dianggap kondisi terkini.</dd>
+    </dl></div>
+  </details>
+
+  <details class="help" id="pushBox">
+    <summary>📲 Notifikasi push (tetap masuk walau tab ditutup)</summary>
+    <div class="body">
+      <div id="pushInfo">Memeriksa…</div>
+      <div class="acts">
+        <select id="pushMode" aria-label="Jenis notifikasi push">
+          <option value="all">Semua restock</option>
+          <option value="vip">Hanya member VIP</option>
+          <option value="favs">Hanya favorit ⭐</option>
         </select>
-      </label>
-      <button class="primary" type="submit">+ Tambah Target</button>
-    </form>
-
-    <div class="target-list">
-      {% for t in sniping_targets %}
-      <div class="target-row">
-        <div class="target-main">
-          <b>🎯 {{ t.member_name }}</b>
-          <small>{{ t.group_name }}</small>
-          {% if t.is_available %}
-            <small class="target-available">● AVAILABLE • {{ t.available_slots }} slot • total stok {{ t.available_stock }}</small>
-          {% else %}
-            <small class="target-sold">● SOLD OUT / belum tersedia</small>
-          {% endif %}
-        </div>
-        <div class="target-actions">
-          {% if t.is_available %}
-            <a class="buy-btn" href="{{ t.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a>
-          {% endif %}
-          <form method="post" action="/sniping/{{ t.id }}/delete" onsubmit="return confirm('Hapus target sniping ini?')">
-            <button class="danger" type="submit">Hapus</button>
-          </form>
-        </div>
+        <button class="btn" id="pushToggle" disabled>Aktifkan push</button>
+        <button class="btn" id="pushTest" hidden>Kirim tes</button>
       </div>
-      {% else %}
-        <p class="empty">Belum ada member target. Pilih member dari daftar di atas.</p>
-      {% endfor %}
     </div>
-  </article>
+  </details>
 
-  <article class="card">
-    <div class="card-head">
-      <div><h2>Recent Restocks</h2><p class="muted">Riwayat perubahan sold out → tersedia.</p></div>
-    </div>
-    <div class="timeline">
-      {% for r in restocks %}
-      <div class="timeline-item">
-        <span class="dot"></span>
-        <div class="timeline-content">
-          <b>{{ r.group_name }} • {{ r.member_name }}{% if r.is_target %}<span class="snipe-mark">🎯 TARGET</span>{% endif %}</b>
-          <small>{{ r.session_name }} • {{ r.track_name }} • {{ r.old_stock }} → {{ r.new_stock }}</small>
-          <small>{{ r.detected_at }}</small>
-        </div>
-        <div class="timeline-action">
-          <a class="buy-btn secondary" href="{{ r.buy_url }}" target="_blank" rel="noopener noreferrer">Beli</a>
-        </div>
-      </div>
-      {% else %}
-        <p class="empty">Belum ada restock terdeteksi sejak database dibuat.</p>
-      {% endfor %}
-    </div>
-  </article>
-</section>
+  <div id="list"></div>
+</main>
+<div id="toasts" aria-live="polite"></div>
+<button class="btn sq" id="top" aria-label="Ke atas">↑</button>
+<nav id="bar" aria-label="Navigasi cepat"><div class="tabs" id="barTabs"></div><a class="btn" id="barBuy" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h9.4a1 1 0 0 0 1-.8L20 8H6.2M9 20h.01M17 20h.01"/></svg>Beli</a></nav>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = new URLSearchParams(location.search).get("key");
+const API = "/api/lanes" + (KEY ? "?key=" + encodeURIComponent(KEY) : "");
+const NEW_WINDOW = 600, FEED_MAX = 30, LOW_QUOTA = 3;
 
-<section class="card">
-  <div class="card-head">
-    <div><h2>Slot Tersedia Sekarang</h2><p class="muted">{{ available|length }} slot pada snapshot terakhir. Tombol Beli membuka halaman pembelian resmi.</p></div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Group</th><th>Member</th><th>Sesi</th><th>Jalur</th><th>Stock</th><th>Aksi</th></tr></thead>
-      <tbody>
-        {% for m in available %}
-        <tr>
-          <td><span class="pill neutral">{{ m.group }}</span></td>
-          <td><div class="slot-member"><b>{{ m.name }}</b>{% if (m.group, m.name) in target_keys %}<span class="snipe-mark">🎯 TARGET</span>{% endif %}</div></td>
-          <td>{{ m.session }}</td>
-          <td>{{ m.track }}</td>
-          <td><b>{{ m.stock }}</b></td>
-          <td><a class="buy-btn" href="{{ m.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="6" class="empty">Belum ada slot tersedia / collector belum mengirim data.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("jr_" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("jr_" + k, JSON.stringify(v)); } catch {} }
+};
+let data = null, tab = store.get("tab", null), prevQuota = new Map(), firstLoad = true, dateKey = "";
+let favs = new Set(store.get("favs", [])), feed = store.get("feed", []), buyPrep = store.get("buyPrep", []);
+let timelineExpanded = false;
+const openMembers = new Set();
+const openLanes = new Set();          // jalur yang grafiknya sedang dibuka ("EVENT|sdc")
+const hist = new Map();               // cache riwayat: "EVENT|sdc" -> {points, now, at, err}
+const selKeys = {};                   // penanda isi dropdown (agar tidak dibangun ulang tiap render)
+let unseen = 0, wl = null;
+const flashAt = new Map();            // "EVENT|member" / "EVENT|sdc" -> waktu restock terdeteksi
+const isFlash = k => Date.now() - (flashAt.get(k) || 0) < 2500;
+const VIEWS = ["cards", "heat", "analytics", "status"];
+let view = store.get("view", "cards"); if (!VIEWS.includes(view)) view = "cards";
+let ana = null, sysd = null, extraErr = "";
 
-<section class="grid dashboard-grid">
-  <article class="card">
-    <div class="card-head"><div><h2>Discord Webhooks</h2><p class="muted">Tambah sebanyak yang dibutuhkan. Restock langsung @everyone.</p></div></div>
-    <form action="/webhooks" method="post" class="webhook-form">
-      <label>Nama server/channel<input name="name" placeholder="Contoh: Server Utama #restock" required></label>
-      <label>Discord webhook URL<input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required></label>
-      <div class="checks">
-        <label><input type="checkbox" name="notify_jkt" checked> JKT48</label>
-        <label><input type="checkbox" name="notify_akb" checked> AKB48</label>
-      </div>
-      <button class="primary" type="submit">Test & Aktifkan Webhook</button>
-    </form>
+const buyFor = code => "https://jkt48.com/purchase/exclusive?code=" + encodeURIComponent(code);
+const rp = v => Number.isFinite(+v) ? "Rp" + (+v).toLocaleString("id-ID") : "-";
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const norm = s => String(s || "").split(/\s+/).join(" ").trim().toLowerCase();
+const initials = n => String(n).split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const hm = ts => new Date(ts * 1000).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
-    <div class="hook-list">
-      {% for h in webhooks %}
-      <div class="hook-row">
-        <div>
-          <b>{{ h.name }}</b><small>{{ h.masked_url }}</small>
-          <small>{% if h.notify_jkt %}JKT48{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small>
-        </div>
-        <div class="row-actions">
-          <span class="pill {% if h.enabled %}ok{% else %}bad{% endif %}">{% if h.enabled %}Active{% else %}Disabled{% endif %}</span>
-          <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>
-          <form method="post" action="/webhooks/{{ h.id }}/toggle"><button class="ghost">{% if h.enabled %}Disable{% else %}Enable{% endif %}</button></form>
-          <form method="post" action="/webhooks/{{ h.id }}/delete" onsubmit="return confirm('Hapus webhook ini?')"><button class="danger">Delete</button></form>
-        </div>
-      </div>
-      {% else %}<p class="empty">Belum ada webhook.</p>{% endfor %}
-    </div>
-  </article>
+// ---- ikon SVG
+const SVGNS = "http://www.w3.org/2000/svg";
+const ICONS = {
+  ticket: "M3 9V7a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a3 3 0 0 0 0 6v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a3 3 0 0 0 0-6z",
+  calendar: "M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
+  clock: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM12 7v5l3 2",
+  cart: "M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h9.4a1 1 0 0 0 1-.8L20 8H6.2M9 20h.01M17 20h.01",
+  copy: "M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"
+};
+function icon(name) {
+  const s = document.createElementNS(SVGNS, "svg"), p = document.createElementNS(SVGNS, "path");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", "ic"); s.setAttribute("aria-hidden", "true");
+  p.setAttribute("d", ICONS[name]); s.append(p);
+  return s;
+}
+function withIcon(tag, cls, name, text) {
+  const e = document.createElement(tag); if (cls) e.className = cls;
+  e.append(icon(name)); if (text) e.append(document.createTextNode(text));
+  return e;
+}
 
-  <article class="card">
-    <div class="card-head">
-      <div><h2>Cara Kerja Sniping</h2><p class="muted">Sniping tidak menambah request API. Ia memakai snapshot collector yang sama.</p></div>
-    </div>
-    <div class="api-note">
-      <p><b>1.</b> Pilih member target dari dropdown.</p>
-      <p><b>2.</b> Target disimpan khusus untuk akun Anda.</p>
-      <p><b>3.</b> Jika stok target berubah 0 → tersedia, webhook Anda mendapat alert <b>🎯 TARGET MEMBER RESTOCK</b>.</p>
-      <p><b>4.</b> Alert tetap satu pesan saja, bukan duplikat alert umum + sniping.</p>
-    </div>
-  </article>
-</section>
-{% endblock %}
+function fdate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(s))) return s;
+  const d = new Date(s);
+  return isNaN(d) ? s : d.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+function ago(ts, now) {
+  if (!ts) return "belum ada data";
+  const s = Math.max(0, Math.round(now - ts));
+  return s < 60 ? s + " dtk lalu" : Math.round(s / 60) + " mnt lalu";
+}
+// versi panjang: mendukung jam & hari (dipakai untuk "restock terakhir" dan banner data basi)
+function fmtDur(sec) {
+  const s = Math.max(0, Math.round(sec));
+  if (s < 60) return s + " dtk";
+  if (s < 3600) return Math.round(s / 60) + " mnt";
+  if (s < 86400) return (s / 3600).toFixed(1) + " jam";
+  return (s / 86400).toFixed(1) + " hari";
+}
+const agoLong = (ts, now) => ts ? fmtDur(now - ts) + " lalu" : "belum ada data";
+const fmtMin = m => m == null ? "-" : m < 1 ? "<1 mnt" : m < 60 ? "±" + Math.round(m) + " mnt" : "±" + (m / 60).toFixed(1) + " jam";
+const speedLabel = r => r >= 2 ? "🔥 Cepat" : r >= 0.5 ? "⚡ Sedang" : r > 0 ? "🐢 Lambat" : "💤 Belum ada penjualan";
+
+function beep() {
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = .15;
+    o.start(); o.stop(c.currentTime + .25);
+  } catch {}
+}
+function toast(text, url) {
+  const t = el("div", "toast" + (url ? " link" : ""), text + (url ? " · ketuk untuk beli" : ""));
+  if (url) t.onclick = () => window.open(url, "_blank", "noopener");
+  $("toasts").append(t);
+  setTimeout(() => t.remove(), 6000);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Disalin: " + text); return; } catch {}
+  try {
+    const ta = el("textarea"); ta.value = text; ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
+    toast("Disalin: " + text);
+  } catch { toast("Gagal menyalin. Salin manual: " + text); }
+}
+
+function avatar(name, url, size) {
+  const box = el("div", "av " + size), fb = el("span", "", initials(name) || "?");
+  box.append(fb);
+  if (url) {
+    const img = new Image();
+    img.referrerPolicy = "no-referrer"; img.alt = name; img.loading = "lazy";
+    img.onload = () => { fb.remove(); box.append(img); };
+    img.src = url;
+  }
+  return box;
+}
+
+function stats(lanes) {
+  const sessions = new Map();
+  let tix = 0, avail = 0;
+  for (const l of lanes) {
+    tix += l.quota; if (l.quota > 0) avail++;
+    const sk = [l.date, l.start, l.end, l.session].join("|");
+    if (!sessions.has(sk)) sessions.set(sk, []);
+    sessions.get(sk).push(l);
+  }
+  let sesAvail = 0;
+  for (const ls of sessions.values()) if (ls.some(l => l.quota > 0)) sesAvail++;
+  return { tix, avail, sessions, sesAvail };
+}
+
+
+function prepKey(f) { return [f.code, f.sdc].join("|"); }
+function isVipFor(f) {
+  try {
+    const ev = data && data.events && data.events[f.code];
+    return !!ev && ev.lanes.some(l => l.sdc === f.sdc && l.vip);
+  } catch { return false; }
+}
+function renderTimeline() {
+  const box = $("liveTimeline"), list = timelineExpanded ? feed : feed.slice(0, 8);
+  $("timelineCount").textContent = feed.length + " event" + (feed.length === 1 ? "" : "s");
+  box.textContent = "";
+  if (!list.length) { box.append(el("div", "radar-empty", "Menunggu restock baru…")); return; }
+  for (const f of list) {
+    const r = el("div", "radar-feed-item");
+    r.append(el("time", "radar-feed-time", hm(f.at)));
+    const main = el("div", "radar-feed-main");
+    const title = el("b", "", f.member + "  +" + f.delta);
+    const meta = el("div", "radar-feed-meta", (isVipFor(f) ? "★ VIP · " : "") + f.event + " · " + f.lane + " · " + f.session);
+    main.append(title, meta); r.append(main);
+    const a = withIcon("a", "btn radar-mini-buy", "cart", "Beli"); a.href = buyFor(f.code); a.target = "_blank"; a.rel = "noopener";
+    a.onclick = e => e.stopPropagation(); r.append(a);
+    r.onclick = () => prepareBuy(f);
+    box.append(r);
+  }
+}
+function renderAlertCenter() {
+  const member = norm($("alertMember").value), scope = $("alertScope").value, ev = $("alertEvent").value;
+  const events = [...new Set(feed.map(f => [f.code, f.event]))].sort((a,b)=>String(a[1]).localeCompare(String(b[1])));
+  const cur = $("alertEvent").value;
+  const opts = [["", "Semua event"], ...events];
+  const sig = opts.map(x=>x.join("|")).join("\u0001");
+  if ($("alertEvent").dataset.sig !== sig) {
+    $("alertEvent").dataset.sig = sig; $("alertEvent").textContent = "";
+    for (const [v,l] of opts) $("alertEvent").append(new Option(l,v));
+    $("alertEvent").value = opts.some(x=>x[0]===cur) ? cur : "";
+  }
+  const list = feed.filter(f => {
+    if (member && !norm(f.member).includes(member)) return false;
+    if (ev && f.code !== ev) return false;
+    if (scope === "vip" && !isVipFor(f)) return false;
+    if (scope === "fav" && !favs.has(norm(f.member))) return false;
+    return true;
+  }).slice(0, 30);
+  $("alertCount").textContent = list.length + " alert" + (list.length===1?"":"s");
+  const box = $("alertCenter"); box.textContent = "";
+  if (!list.length) { box.append(el("div", "radar-empty", feed.length ? "Tidak ada alert yang cocok dengan filter." : "Belum ada alert.")); return; }
+  for (const f of list) {
+    const item = el("div", "radar-alert-item");
+    const top = el("div", "radar-alert-top"); top.append(el("span", "radar-alert-name", f.member + "  +" + f.delta));
+    if (isVipFor(f)) top.append(el("span", "radar-alert-badge", "★ VIP"));
+    item.append(top, el("div", "radar-alert-meta", hm(f.at) + " · " + f.event + " · " + f.lane + " · " + f.session));
+    const acts = el("div", "radar-alert-actions");
+    const prep = withIcon("button", "btn", "cart", "Siapkan beli"); prep.type="button"; prep.onclick=()=>prepareBuy(f);
+    const copy = withIcon("button", "btn", "copy", "Salin kode"); copy.type="button"; copy.onclick=()=>copyText(f.sdc);
+    acts.append(prep, copy); item.append(acts); box.append(item);
+  }
+}
+function renderBuyPrep() {
+  const box = $("buyPrepList"); box.textContent="";
+  if (!buyPrep.length) { box.append(el("div", "radar-empty", "Belum ada sesi yang disiapkan.")); return; }
+  for (const f of buyPrep.slice(0, 12)) {
+    const item=el("div","radar-buy-item"), info=el("div","radar-buy-info");
+    info.append(el("b","",f.member + " · +" + f.delta), el("div","radar-buy-code",f.sdc), el("div","radar-buy-meta",f.event+" · "+f.lane+" · "+f.session+" · "+hm(f.at)));
+    const acts=el("div","radar-buy-actions");
+    const open=el("a","btn","🛒 Buka beli"); open.href=buyFor(f.code); open.target="_blank"; open.rel="noopener";
+    const cp=el("button","btn","Kode"); cp.type="button"; cp.onclick=()=>copyText(f.sdc);
+    acts.append(open,cp); item.append(info,acts); box.append(item);
+  }
+}
+function prepareBuy(f) {
+  const key=prepKey(f); buyPrep=[f,...buyPrep.filter(x=>prepKey(x)!==key)].slice(0,12); store.set("buyPrep",buyPrep); renderBuyPrep();
+  toast("Siap beli: "+f.member+" · "+f.sdc, buyFor(f.code));
+}
+
+function renderFeed() {
+  $("fc").textContent = feed.length;
+  const box = $("feed"); box.textContent = "";
+  if (!feed.length) { box.textContent = "Belum ada restock terdeteksi sejak dashboard dibuka."; return; }
+  for (const f of feed) {
+    const r = el("div", "fi");
+    r.append(el("time", "", hm(f.at)), el("b", "", "+" + f.delta), el("span", "", f.member));
+    if (f.code) {
+      const a = withIcon("a", "btn", "cart", "Beli"); a.href = buyFor(f.code); a.target = "_blank"; a.rel = "noopener";
+      a.onclick = e => e.stopPropagation();
+      r.append(a);
+    }
+    r.append(el("small", "", f.event + " · " + f.lane + " · " + f.session));
+    r.onclick = () => { $("q").value = f.member; render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    box.append(r);
+  }
+  renderTimeline(); renderAlertCenter(); renderBuyPrep();
+}
+
+// ---- dropdown generik: dibangun ulang hanya jika daftar berubah
+function fillSel(id, allLabel, items) {
+  const k = items.map(i => i[0]).join("\u0001");
+  if (selKeys[id] === k) return;
+  selKeys[id] = k;
+  const sel = $(id), cur = sel.value;
+  sel.textContent = "";
+  sel.append(new Option(allLabel, ""));
+  for (const [v, l] of items) sel.append(new Option(l, v));
+  sel.value = items.some(i => i[0] === cur) ? cur : "";
+}
+
+// ---- info kecepatan per jalur
+function laneMeta(l) {
+  const p = [];
+  if (l.quota > 0) {
+    if (l.rate > 0) {
+      p.push(speedLabel(l.rate) + " · " + l.rate + "/mnt");
+      if (l.sold_10m) p.push("terjual " + l.sold_10m + " (10 mnt)");
+      if (l.sold_1h) p.push(l.sold_1h + " (1 jam)");
+      if (l.eta != null) p.push("habis " + fmtMin(l.eta));
+    } else p.push("💤 belum ada penjualan");
+  } else {
+    if (l.so_after != null) p.push("🔴 habis setelah " + fmtDur(l.so_after) + " sejak restock");
+    if (l.sold_1h) p.push("terjual " + l.sold_1h + " (1 jam)");
+  }
+  return p.join(" · ");
+}
+
+// ---- grafik riwayat (step chart SVG)
+function spark(points, now) {
+  const W = 320, H = 70, P = 4;
+  const pts = points.map(p => [+p[0], +p[1]]);
+  pts.push([Math.max(now, pts[pts.length - 1][0]), pts[pts.length - 1][1]]);
+  const t0 = pts[0][0], t1 = Math.max(pts[pts.length - 1][0], t0 + 1);
+  const peak = Math.max(1, ...pts.map(p => p[1]));
+  const x = t => (P + (t - t0) / (t1 - t0) * (W - 2 * P)).toFixed(1);
+  const y = q => (H - P - q / peak * (H - 2 * P)).toFixed(1);
+  let d = "M" + x(pts[0][0]) + "," + y(pts[0][1]);
+  for (let i = 1; i < pts.length; i++) d += " H" + x(pts[i][0]) + " V" + y(pts[i][1]);
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Grafik riwayat kuota");
+  const mk = (cls, attrs) => { const e = document.createElementNS(SVGNS, "path"); e.setAttribute("class", cls); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  svg.append(
+    mk("z", { d: "M" + P + "," + (H - P) + " H" + (W - P) }),
+    mk("a", { d: d + " V" + (H - P) + " H" + x(t0) + " Z" }),
+    mk("l", { d })
+  );
+  return svg;
+}
+function histPanel(code, l, now) {
+  const box = el("div", "hist"), c = hist.get(code + "|" + l.sdc);
+  if (!c || !c.points) { box.textContent = c && c.err ? "Gagal memuat riwayat: " + c.err : "Memuat riwayat…"; return box; }
+  if (!c.points.length) { box.textContent = "Belum ada riwayat untuk jalur ini."; return box; }
+  const ref = c.now || now, pts = c.points, peak = Math.max(...pts.map(p => p[1]));
+  box.append(spark(pts, ref));
+  box.append(el("div", "", "Puncak " + peak + " · " + pts.length + " perubahan · sejak " + hm(pts[0][0]) + " (" + fmtDur(ref - pts[0][0]) + " terakhir)"));
+  const a = el("div", "acts"), b = withIcon("button", "btn", "copy", "Salin kode sesi");
+  b.onclick = e => { e.stopPropagation(); copyText(l.sdc); };
+  a.append(b); box.append(a);
+  return box;
+}
+async function ensureHist(code, sdc) {
+  const k = code + "|" + sdc, c = hist.get(k);
+  if (c && Date.now() - c.at < 10000) return;
+  hist.set(k, { ...(c || {}), at: Date.now() });
+  try {
+    const url = "/api/history?code=" + encodeURIComponent(code) + "&sdc=" + encodeURIComponent(sdc) + (KEY ? "&key=" + encodeURIComponent(KEY) : "");
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    hist.set(k, { points: Array.isArray(j.points) ? j.points : [], now: j.now, at: Date.now() });
+  } catch (e) {
+    hist.set(k, { ...(hist.get(k) || {}), err: e.message, at: Date.now() });
+  }
+  render();
+}
+
+function selTab(c) { tab = c; store.set("tab", c); render(); }
+function sdate(d) {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(d))) return String(d || "");
+  const x = new Date(d);
+  return isNaN(x) ? String(d) : x.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+}
+
+// ---- heatmap member x sesi
+function renderHeat(names, groups, info, buyUrl) {
+  const cols = new Map();
+  for (const ls of groups.values()) for (const l of ls) {
+    const k = [l.date, l.start, l.end, l.session].join("|");
+    if (!cols.has(k)) cols.set(k, l);
+  }
+  const keys = [...cols.keys()].sort((a, b) => {
+    const A = cols.get(a), B = cols.get(b);
+    return (A.date + A.start).localeCompare(B.date + B.start) || String(A.session).localeCompare(String(B.session), "id", { numeric: true });
+  });
+  const sums = new Map(names.map(n => [n, new Map([...info.get(n).sessions].map(([k, ls]) => [k, ls.reduce((x, l) => x + l.quota, 0)]))]));
+  let maxCell = 1;
+  for (const m of sums.values()) for (const v of m.values()) if (v > maxCell) maxCell = v;
+
+  const wrap = el("div", "hm-wrap");
+  const lg = el("div", "hm-legend");
+  for (const [bg, t] of [["rgba(22,163,74,.6)", "tersedia (makin pekat = makin banyak)"], ["rgba(234,179,8,.7)", "menipis (≤" + LOW_QUOTA + ")"], ["rgba(220,38,38,.3)", "SO"]]) {
+    const sp = el("span"), i = el("i"); i.style.background = bg; sp.append(i, document.createTextNode(t)); lg.append(sp);
+  }
+  lg.append(el("span", "", "Ketuk angka untuk beli · ketuk nama untuk buka kartu"));
+  wrap.append(lg);
+
+  const tbl = el("table", "hm"), thead = el("thead"), hr = el("tr");
+  hr.append(el("th", "hm-name", "Member"));
+  for (const k of keys) {
+    const f = cols.get(k), th = el("th", "", f.session || "Sesi");
+    th.append(el("small", "", sdate(f.date) + " " + f.start));
+    hr.append(th);
+  }
+  thead.append(hr); tbl.append(thead);
+
+  const tbody = el("tbody");
+  for (const name of names) {
+    const tr = el("tr"), th = el("th", "hm-name"), nb = el("button", "hm-n", (favs.has(norm(name)) ? "★ " : "") + name);
+    nb.title = "Buka kartu " + name;
+    nb.onclick = () => { $("q").value = name; view = "cards"; store.set("view", "cards"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+    th.append(nb); tr.append(th);
+    const sess = info.get(name).sessions;
+    for (const k of keys) {
+      const ls = sess.get(k), td = el("td", "hmc");
+      if (!ls) { td.classList.add("none"); td.textContent = "·"; tr.append(td); continue; }
+      const q = sums.get(name).get(k), f = ls[0];
+      const tip = name + " · " + (f.session || "Sesi") + " " + sdate(f.date) + " " + f.start + " — " + ls.map(l => l.lane + ": " + (l.quota > 0 ? l.quota : "SO")).join(", ");
+      if (ls.some(l => isFlash(tab + "|" + l.sdc))) td.classList.add("flash");
+      if (q > 0) {
+        td.style.background = q <= LOW_QUOTA ? "rgba(234,179,8,.7)" : "rgba(22,163,74," + (0.25 + 0.5 * Math.min(1, q / maxCell)).toFixed(2) + ")";
+        const a = el("a", "hmv", String(q)); a.href = buyUrl; a.target = "_blank"; a.rel = "noopener"; a.title = tip + " (ketuk untuk beli)";
+        td.append(a);
+      } else {
+        td.classList.add("so"); td.title = tip;
+        td.append(el("span", "hmv", "SO"));
+      }
+      tr.append(td);
+    }
+    tbody.append(tr);
+  }
+  tbl.append(tbody);
+
+  const tf = el("tfoot"), fr = el("tr");
+  fr.append(el("th", "hm-name", "Total"));
+  for (const k of keys) {
+    let t = 0; for (const m of sums.values()) t += m.get(k) || 0;
+    fr.append(el("td", "", t.toLocaleString("id-ID")));
+  }
+  tf.append(fr); tbl.append(tf);
+  wrap.append(tbl);
+  return wrap;
+}
+
+// ---- helper format
+function fmtMS(sec) {
+  if (sec == null) return "-";
+  const s = Math.max(0, Math.round(sec));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s";
+  return Math.floor(s / 3600) + "j " + Math.floor((s % 3600) / 60) + "m";
+}
+function fmtUp(sec) {
+  const s = Math.max(0, Math.round(sec)), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + "d " : "") + h + "h " + m + "m";
+}
+const hms = ts => new Date(ts * 1000).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const hourRange = h => h == null ? "-" : String(h).padStart(2, "0") + ":00–" + String((h + 1) % 24).padStart(2, "0") + ":00";
+function kcard(val, label) {
+  const d = el("div"); d.append(el("b", "", String(val)), el("span", "", label)); return d;
+}
+
+// ---- ambil data tab Analytics / Status
+async function loadExtra() {
+  const v = view;
+  if (v !== "analytics" && v !== "status") return;
+  try {
+    const r = await fetch((v === "analytics" ? "/api/analytics" : "/api/status") + (KEY ? "?key=" + encodeURIComponent(KEY) : ""), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (v === "analytics") ana = j; else sysd = j;
+    extraErr = "";
+  } catch (e) { extraErr = e.message; }
+  render();
+}
+
+// ---- tab Analytics
+function renderAnalytics() {
+  const pg = el("div", "pg");
+  if (!ana) { pg.append(el("div", "empty", extraErr ? "Gagal memuat analytics: " + extraErr : "Memuat analytics…")); return pg; }
+  const a = ana, t = a.today, evs = a.events || {};
+  pg.append(el("h2", "ph", "HARI INI · " + a.day_label));
+  if (a.tracked_since && a.tracked_since > a.day_start + 60)
+    pg.append(el("div", "note", "Pencatatan baru dimulai pukul " + hm(a.tracked_since) + ", jadi kejadian sebelum jam itu tidak ikut terhitung."));
+
+  const r1 = el("div", "sum");
+  r1.append(kcard(t.restock, "restock"), kcard(t.tickets_in, "tiket masuk"), kcard(t.tickets_sold, "tiket terjual"), kcard(t.sold_out, "sold out"));
+  pg.append(r1);
+
+  const f0 = (a.fastest || [])[0];
+  const r2 = el("div", "sum txt");
+  r2.append(
+    kcard(fmtMS(a.avg_so), "rata-rata sampai SO" + (a.so_samples ? " (" + a.so_samples + " sampel)" : "")),
+    kcard(a.most_active && evs[a.most_active] ? evs[a.most_active].name : "-", "event paling aktif"),
+    kcard(hourRange(a.peak_hour), "jam restock terbanyak"),
+    kcard(f0 ? fmtMS(f0.duration) : "-", f0 ? "turnover tercepat · " + f0.member : "turnover tercepat")
+  );
+  pg.append(r2);
+
+  // restock per jam
+  const hc = el("div", "card"); hc.append(el("h2", "", "RESTOCK PER JAM"));
+  const bars = el("div", "hbars"), mx = Math.max(1, ...a.hours);
+  a.hours.forEach((n, h) => {
+    const b = el("div", "hb" + (n > 0 && h === a.peak_hour ? " pk" : "") + (h === a.hour_now ? " now" : "")), i = el("i");
+    i.style.height = (n ? Math.max(6, n / mx * 100) : 2) + "%";
+    b.title = hourRange(h) + " · " + n + " restock · " + a.hours_in[h] + " tiket";
+    b.append(i); bars.append(b);
+  });
+  hc.append(bars);
+  const ax = el("div", "haxis");
+  for (const h of ["00", "06", "12", "18", "23"]) ax.append(el("span", "", h));
+  hc.append(ax); pg.append(hc);
+
+  // per event
+  const ec = el("div", "card"), ew = el("div", "tw"), et = el("table", "at"), eh = el("thead"), er = el("tr");
+  ec.append(el("h2", "", "PER EVENT"));
+  for (const h of ["Event", "Restock", "Masuk", "Terjual", "SO"]) er.append(el("th", "", h));
+  eh.append(er); et.append(eh);
+  const eb = el("tbody");
+  for (const e of Object.values(evs)) {
+    const tr = el("tr");
+    tr.append(el("td", "", e.name), el("td", "", String(e.restock)), el("td", "", String(e.tickets_in)), el("td", "", String(e.tickets_sold)), el("td", "", String(e.sold_out)));
+    eb.append(tr);
+  }
+  et.append(eb); ew.append(et); ec.append(ew); pg.append(ec);
+
+  // turnover tercepat
+  const fc = el("div", "card"); fc.append(el("h2", "", "TURNOVER TERCEPAT (HABIS PALING CEPAT SETELAH RESTOCK)"));
+  if (!(a.fastest || []).length) fc.append(el("div", "", "Belum ada sold out dengan durasi terukur hari ini."));
+  else {
+    const fw = el("div", "tw"), ft = el("table", "at"), fh = el("thead"), fr = el("tr");
+    for (const h of ["Member", "Sesi", "Bertahan", "Masuk"]) fr.append(el("th", "", h));
+    fh.append(fr); ft.append(fh);
+    const fb = el("tbody");
+    a.fastest.forEach((f, i) => {
+      const tr = el("tr"), td = el("td");
+      td.append(document.createTextNode((i + 1) + ". " + f.member), el("small", "", f.event + " · " + f.lane));
+      tr.append(td, el("td", "", (f.session || "Sesi") + " · " + sdate(f.date) + " " + f.start), el("td", "", fmtMS(f.duration)), el("td", "", String(f.tickets_in)));
+      fb.append(tr);
+    });
+    ft.append(fb); fw.append(ft); fc.append(fw);
+  }
+  pg.append(fc);
+  const dl = el("div", "acts"), kq = KEY ? "&key=" + encodeURIComponent(KEY) : "";
+  const d1 = el("a", "btn", "⬇ CSV hari ini"); d1.href = "/api/export.csv?range=today" + kq; d1.download = "";
+  const d2 = el("a", "btn", "⬇ CSV semua (48 jam)"); d2.href = "/api/export.csv?range=all" + kq; d2.download = "";
+  dl.append(d1, d2); pg.append(dl);
+  return pg;
+}
+
+// ---- tab Status
+function renderStatus() {
+  const pg = el("div", "pg");
+  if (!sysd) { pg.append(el("div", "empty", extraErr ? "Gagal memuat status: " + extraErr : "Memuat status…")); return pg; }
+  const s = sysd, now = s.now, comps = s.components || [];
+  const worst = comps.some(c => c.status === "bad") ? "bad" : comps.some(c => c.status === "warn") ? "warn" : "ok";
+  pg.append(el("div", "ssum " + worst, worst === "ok" ? "🟢 SEMUA SISTEM NORMAL" : worst === "warn" ? "🟡 ADA KOMPONEN BERMASALAH" : "🔴 ADA KOMPONEN OFFLINE"));
+
+  const dc = comps.find(c => c.id === "discord");
+  const kp = el("div", "sum");
+  kp.append(
+    kcard(fmtUp(s.uptime), "uptime"),
+    kcard((s.requests.total || 0).toLocaleString("id-ID"), "request sejak start"),
+    kcard((s.requests.errors || 0).toLocaleString("id-ID"), "respon error (4xx/5xx)"),
+    kcard(dc && dc.latency_ms != null ? dc.latency_ms + " ms" : "-", "latensi Discord")
+  );
+  pg.append(kp);
+
+  const card = el("div", "card"); card.append(el("h2", "", "SYSTEM STATUS"));
+  for (const c of comps) {
+    const r = el("div", "srow " + c.status);
+    r.append(el("span", "dot"), el("span", "sn", c.name), el("span", "sl", c.label));
+    const lines = [];
+    if (c.events) {
+      if (c.status === "bad") lines.push("Last data: " + (c.last ? fmtMS(now - c.last) + " lalu" : "belum ada data"));
+      for (const e of c.events)
+        lines.push(e.name + " · " + (e.last ? hms(e.last) + " (" + fmtMS(now - e.last) + " lalu)" : "belum ada data") +
+          (e.error ? " · gagal " + e.fails + "x: " + e.error : ""));
+    } else if (c.detail) lines.push(c.detail);
+    for (const t of lines) r.append(el("div", "sd", t));
+    card.append(r);
+  }
+  pg.append(card);
+
+  const lu = el("div", "card"); lu.append(el("h2", "", "LAST UPDATE"));
+  for (const c of comps) if (c.events) {
+    const r = el("div", "urow");
+    r.append(el("span", "", c.group), el("b", "", c.last ? hms(c.last) + " · " + fmtMS(now - c.last) + " lalu" : "-"));
+    lu.append(r);
+  }
+  pg.append(lu);
+
+  pg.append(el("div", "note",
+    "Mode poller: " + (s.poller.enabled ? "langsung ke jkt48.com tiap " + s.poller.interval + " dtk" : "menunggu laporan Worker (POST /notify)") +
+    " · data dianggap basi setelah " + s.stale_after + " dtk · jumlah request ikut menghitung polling dashboard ini."));
+  return pg;
+}
+
+function render() {
+  if (!data) return;
+  const codes = Object.keys(data.events);
+  if (!tab || !data.events[tab]) tab = codes[0];
+  const tabs = $("tabs"); tabs.textContent = "";
+  for (const c of codes) {
+    const b = el("button", "tab" + (c === tab ? " on" : ""), data.events[c].name);
+    b.onclick = () => selTab(c);
+    tabs.append(b);
+  }
+  const buyUrl = buyFor(tab);
+  $("buy").href = buyUrl;
+  const bt = $("barTabs"); bt.textContent = "";
+  for (const c of codes) {
+    const b = el("button", "tab" + (c === tab ? " on" : ""), data.events[c].name);
+    b.onclick = () => selTab(c);
+    bt.append(b);
+  }
+  $("barBuy").href = buyUrl;
+  const vw = $("views"); vw.textContent = "";
+  for (const [k, lab] of [["cards", "Kartu"], ["heat", "Heatmap"], ["analytics", "Analytics"], ["status", "Status"]]) {
+    const b = el("button", "tab" + (view === k ? " on" : ""), lab);
+    b.setAttribute("aria-pressed", view === k ? "true" : "false");
+    b.onclick = () => { view = k; store.set("view", k); render(); loadExtra(); };
+    vw.append(b);
+  }
+
+  const ev = data.events[tab], now = data.now, query = $("q").value.trim().toLowerCase();
+  const only = $("only").checked, favOnly = $("favOnly").checked, hotOnly = $("hotOnly").checked, vipOnly = $("vipOnly").checked;
+  const photos = data.photos || {};
+  const age = ev.updated ? now - ev.updated : null;
+  const st = $("status");
+  st.className = "pill " + (age == null ? "bad" : age > data.stale_after ? "warn" : "ok");
+  st.textContent = age == null ? "belum ada data" : (age > data.stale_after ? "⚠ data lama · " : "● live · ") + ago(ev.updated, now);
+
+  // banner merah: event mana pun yang datanya basi / belum ada
+  const bad = codes.filter(c => { const u = data.events[c].updated; return !u || now - u > data.stale_after; });
+  const sb = $("staleBanner");
+  if (bad.length) {
+    sb.hidden = false;
+    sb.textContent = "🚨 DATA TIDAK DIPERBARUI — " +
+      bad.map(c => data.events[c].name + " (" + agoLong(data.events[c].updated, now) + ")").join(", ") +
+      ". Restock tidak akan terdeteksi sampai pulih. Angka di bawah bisa sudah basi; jangan anggap itu kondisi terkini.";
+  } else sb.hidden = true;
+
+  const ps = ((data.poller || {}).status || {})[tab], pb = $("pollBanner");
+  if (ev.sale === "waiting") { pb.hidden = false; pb.textContent = "⏳ Penjualan " + ev.name + " belum dibuka. Radar menunggu jalur muncul dan akan membunyikan alert begitu dibuka."; }
+  else if (ps && !ps.ok) { pb.hidden = false; pb.textContent = "⚠️ Poller gagal " + ps.fails + "x: " + ps.error; }
+  else pb.hidden = true;
+
+  const special = view === "analytics" || view === "status";
+  document.querySelector(".sum").style.display = special ? "none" : "";
+  if (special) {
+    const sl = $("list"); sl.textContent = "";
+    sl.classList.remove("compact", "stale");
+    sl.append(view === "analytics" ? renderAnalytics() : renderStatus());
+    return;
+  }
+
+  const all = ev.lanes, tot = stats(all);
+  $("s-mem").textContent = new Set(all.map(l => l.member)).size;
+  $("s-ses").textContent = tot.sesAvail + " / " + tot.sessions.size;
+  $("s-av").textContent = tot.avail + " / " + all.length;
+  $("s-tix").textContent = tot.tix.toLocaleString("id-ID");
+  const maxQ = Math.max(1, ...all.map(l => l.quota));
+
+  // filter tanggal: bangun ulang hanya jika daftar berubah (agar dropdown tidak tertutup sendiri)
+  const dates = [...new Set(all.map(l => l.date))].sort();
+  if (dates.join() !== dateKey) {
+    dateKey = dates.join();
+    const sel = $("date"), cur = sel.value; sel.textContent = "";
+    sel.append(new Option("Semua tanggal", ""));
+    for (const d of dates) sel.append(new Option(fdate(d), d));
+    sel.value = dates.includes(cur) ? cur : "";
+  }
+  // filter jalur & harga
+  fillSel("lane", "Semua jalur",
+    [...new Set(all.map(l => l.lane).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "id", { numeric: true })).map(v => [String(v), String(v)]));
+  fillSel("price", "Semua harga",
+    [...new Set(all.map(l => l.price).filter(v => v != null))].sort((a, b) => a - b).map(v => [String(v), rp(v)]));
+  const dateSel = $("date").value, laneSel = $("lane").value, priceSel = $("price").value;
+
+  const groups = new Map();
+  for (const l of all) {
+    if (query && !String(l.member).toLowerCase().includes(query)) continue;
+    if (only && l.quota <= 0) continue;
+    if (dateSel && l.date !== dateSel) continue;
+    if (laneSel && String(l.lane) !== laneSel) continue;
+    if (priceSel && String(l.price) !== priceSel) continue;
+    if (favOnly && !favs.has(norm(l.member))) continue;
+    if (vipOnly && !l.vip) continue;
+    if (hotOnly && !(l.restock_at && now - l.restock_at < NEW_WINDOW && l.quota > 0)) continue;
+    if (!groups.has(l.member)) groups.set(l.member, []);
+    groups.get(l.member).push(l);
+  }
+
+  const list = $("list"); list.textContent = "";
+  list.classList.toggle("compact", $("compact").checked);
+  list.classList.toggle("stale", age == null || age > data.stale_after);
+  if (!groups.size) {
+    list.append(el("div", "empty", !all.length ? "Menunggu data dari poller…" : favOnly && !favs.size ? "Belum ada favorit. Ketuk ⭐ di kartu member." : "Tidak ada yang cocok. Coba ubah filter."));
+    return;
+  }
+
+  const info = new Map([...groups].map(([n, ls]) => [n, Object.assign(stats(ls), {
+    last: Math.max(0, ...ls.map(l => l.restock_at || 0)),
+    rate: ls.reduce((x, l) => x + (l.rate || 0), 0)
+  })]));
+  const mode = $("sort").value;
+  const names = [...groups.keys()].sort((a, b) => {
+    const fa = favs.has(norm(a)), fb = favs.has(norm(b));
+    if (fa !== fb) return fa ? -1 : 1;
+    const A = info.get(a), B = info.get(b);
+    if (mode === "tix") return B.tix - A.tix || a.localeCompare(b);
+    if (mode === "name") return a.localeCompare(b);
+    if (mode === "recent") return B.last - A.last || a.localeCompare(b);
+    if (mode === "speed") return B.rate - A.rate || a.localeCompare(b);
+    return (B.avail > 0) - (A.avail > 0) || a.localeCompare(b);
+  });
+  if (view === "heat") { list.append(renderHeat(names, groups, info, buyUrl)); return; }
+  const openAll = $("toggleAll").dataset.open === "1";
+
+  for (const name of names) {
+    const lanes = groups.get(name), s = info.get(name);
+    const photo = (lanes.find(l => l.photo) || {}).photo || photos[norm(name)] || null;
+    const isVip = !!lanes[0].vip, isFav = favs.has(norm(name));
+    const hot = lanes.some(l => l.restock_at && now - l.restock_at < NEW_WINDOW && l.quota > 0);
+
+    const maxQm = Math.max(0, ...lanes.map(l => l.quota));
+    const stc = s.tix <= 0 ? "st-so" : maxQm <= LOW_QUOTA ? "st-low" : "st-ok";
+    const d = el("details", "m " + stc + (isFlash(tab + "|" + name) ? " flash" : ""));
+    const key = tab + "|" + name;
+    d.open = openAll || openMembers.has(key) || !!query;
+    d.ontoggle = () => d.open ? openMembers.add(key) : openMembers.delete(key);
+
+    const sm = el("summary");
+    sm.append(avatar(name, photo, "s"));
+    const who = el("div", "who"), nm = el("div", "n", name);
+    if (isVip) nm.append(el("span", "vip", "★ VIP"));
+    const chips = el("div", "chips");
+    chips.append(
+      withIcon("span", "chip " + (s.tix > 0 ? (stc === "st-low" ? "lowc" : "has") : "none"), "ticket", s.tix + " tiket"),
+      withIcon("span", "chip", "calendar", s.sesAvail + "/" + s.sessions.size + " sesi"),
+      el("span", "chip", s.avail + "/" + lanes.length + " jalur")
+    );
+    if (s.rate > 0) chips.append(el("span", "chip x", speedLabel(s.rate).split(" ")[0] + " " + (+s.rate.toFixed(2)) + "/mnt"));
+    if (s.last) chips.append(withIcon("span", "chip x", "clock", "restock " + agoLong(s.last, now)));
+    if (hot) chips.append(el("span", "chip hot", "▲ baru"));
+    who.append(nm, chips);
+    const star = el("button", "star" + (isFav ? " on" : ""), isFav ? "★" : "☆");
+    star.setAttribute("aria-label", (isFav ? "Hapus favorit " : "Jadikan favorit ") + name);
+    star.onclick = e => {
+      e.preventDefault(); e.stopPropagation();
+      const k = norm(name); favs.has(k) ? favs.delete(k) : favs.add(k);
+store.set("favs", [...favs]); render(); pushSyncSoon();
+    };
+    const parts = [who];
+    if (s.tix > 0) {
+      const bl = withIcon("a", "btn buysm", "cart", "Beli"); bl.href = buyUrl; bl.target = "_blank"; bl.rel = "noopener";
+      bl.title = "Beli tiket"; bl.setAttribute("aria-label", "Beli tiket " + name); bl.onclick = e => e.stopPropagation();
+      parts.push(bl);
+    }
+    sm.append(...parts, star, el("span", "arrow", "›"));
+    d.append(sm);
+
+    const det = el("div", "detail");
+    const hero = el("div", "hero");
+    hero.append(avatar(name, photo, "l"));
+    const txt = el("div", "txt");
+    txt.append(el("h2", "", name));
+    txt.append(el("p", "", s.tix > 0
+      ? "Masih ada " + s.tix + " tiket di " + s.sesAvail + " dari " + s.sessions.size + " sesi."
+      : "Semua jalur member ini sold out. Pakai /pantau di Discord untuk dapat notifikasi saat restock."));
+    const kp = el("div", "kpis");
+    for (const [v, lab] of [[s.tix, "tiket tersisa"], [s.sesAvail + "/" + s.sessions.size, "sesi tersedia"], [s.avail + "/" + lanes.length, "jalur tersedia"]]) {
+      const k = el("div", "kpi"); k.append(el("b", "", String(v)), el("span", "", lab)); kp.append(k);
+    }
+    txt.append(kp);
+    const acts = el("div", "acts");
+    const buyA = withIcon("a", "btn buyp", "cart", "Beli"); buyA.href = buyUrl; buyA.target = "_blank"; buyA.rel = "noopener";
+    const cpN = withIcon("button", "btn", "copy", "Salin nama"); cpN.onclick = () => copyText(name);
+    acts.append(buyA, cpN); txt.append(acts);
+    hero.append(txt); det.append(hero);
+
+    const sg = el("div", "sgrid");
+    const sessList = [...s.sessions.values()].sort((a, b) =>
+      (a[0].date + a[0].start).localeCompare(b[0].date + b[0].start));
+    for (const ls of sessList) {
+      ls.sort((a, b) => a.lane.localeCompare(b.lane, "id", { numeric: true }));
+      const f = ls[0], sTix = ls.reduce((x, l) => x + l.quota, 0);
+      const box = el("div", "sess"), h = el("div", "sess-h");
+      h.append(el("span", "t", (f.session || "Sesi") + " · " + fdate(f.date) + " · " + f.start + "–" + f.end));
+      h.append(withIcon("span", "chip " + (sTix > 0 ? "has" : "none"), "ticket", String(sTix)));
+      const sBuy = withIcon("a", "btn buyp", "cart", "Beli"); sBuy.href = buyUrl; sBuy.target = "_blank"; sBuy.rel = "noopener"; sBuy.title = "Buka halaman pembelian"; sBuy.setAttribute("aria-label", "Buka halaman pembelian");
+      const sCp = withIcon("button", "btn", "copy", ""); sCp.title = "Salin info sesi"; sCp.setAttribute("aria-label", "Salin info sesi");
+      sCp.onclick = () => copyText(name + " — " + (f.session || "Sesi") + " " + fdate(f.date) + " " + f.start + "–" + f.end);
+      h.append(sBuy, sCp);
+      box.append(h);
+      for (const l of ls) {
+        const fresh = l.restock_at && now - l.restock_at < NEW_WINDOW && l.quota > 0;
+        const lk = tab + "|" + l.sdc, isOpen = openLanes.has(lk);
+        const wrap = el("div", "lw");
+        const r = el("div", "ln click" + (fresh ? " new" : "") + (isFlash(lk) ? " flash" : ""));
+        r.append(el("span", "", l.lane), el("span", "pr", rp(l.price)));
+        const q = el("span", "q " + (l.quota > 0 ? (l.quota <= LOW_QUOTA ? "low" : "ok") : "no"), l.quota > 0 ? String(l.quota) : "SO");
+        if (fresh) q.append(el("span", "tag", "▲ " + ago(l.restock_at, now)));
+        r.append(q);
+        const bc = el("span", "buyc");
+        if (l.quota > 0) {
+          const ba = withIcon("a", "btn buybtn", "cart", "Beli"); ba.href = buyUrl; ba.target = "_blank"; ba.rel = "noopener";
+          ba.title = "Buka halaman pembelian"; ba.onclick = e => e.stopPropagation(); ba.onkeydown = e => e.stopPropagation();
+          bc.append(ba);
+        }
+        r.append(bc);
+        if (l.quota > 0) { const b = el("i", "bar" + (l.quota <= LOW_QUOTA ? " low" : "")); b.style.width = Math.max(4, l.quota / maxQ * 100) + "%"; r.append(b); }
+        r.append(el("div", "meta", laneMeta(l)));
+        r.tabIndex = 0; r.setAttribute("role", "button"); r.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        r.title = "Ketuk untuk melihat grafik riwayat";
+        const tog = () => { openLanes.has(lk) ? openLanes.delete(lk) : openLanes.add(lk); render(); };
+        r.onclick = tog;
+        r.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tog(); } };
+        wrap.append(r);
+        if (isOpen) { wrap.append(histPanel(tab, l, now)); ensureHist(tab, l.sdc); }
+        box.append(wrap);
+      }
+      sg.append(box);
+    }
+    det.append(sg);
+    d.append(det); list.append(d);
+  }
+}
+
+function detectRestock(json) {
+  const found = [];
+  for (const [code, ev] of Object.entries(json.events))
+    for (const l of ev.lanes) {
+      const k = code + "|" + l.sdc, prev = prevQuota.get(k);
+      if (prev !== undefined && l.quota > prev)
+        found.push({ at: json.now, code, sdc: l.sdc, event: ev.name, member: l.member, lane: l.lane, session: l.session, delta: l.quota - prev });
+      prevQuota.set(k, l.quota);
+    }
+  if (found.length && !firstLoad) {
+    feed = found.concat(feed).slice(0, FEED_MAX); store.set("feed", feed);
+    // Auto Buy Preparation: setiap restock baru masuk antrean persiapan pembelian.
+    for (const f of found.slice().reverse()) {
+      const k = prepKey(f);
+      buyPrep = [f, ...buyPrep.filter(x => prepKey(x) !== k)].slice(0, 12);
+    }
+    store.set("buyPrep", buyPrep); renderFeed();
+    for (const f of found) { flashAt.set(f.code + "|" + f.member, Date.now()); flashAt.set(f.code + "|" + f.sdc, Date.now()); }
+    unseen += found.length;
+    document.title = "🟢 (" + unseen + ") Restock! · JKT48 Ticket Radar";
+    if ($("beep").checked) beep();
+    for (const f of found.slice(0, 3)) {
+      const msg = "🟢 " + f.member + " +" + f.delta + " · " + f.event + " · " + f.lane;
+      toast(msg, buyFor(f.code));
+      if ($("notif").checked && !PUSH.sub && window.Notification && Notification.permission === "granted") {
+        try { const n = new Notification("Restock " + f.member, { body: f.event + " · " + f.lane + " · " + f.session + " (+" + f.delta + ")" }); n.onclick = () => { window.focus(); window.open(buyFor(f.code), "_blank", "noopener"); n.close(); }; } catch {}
+      }
+    }
+    if (found.length > 3) toast("…dan " + (found.length - 3) + " restock lainnya");
+  }
+  firstLoad = false;
+}
+
+async function load() {
+  try {
+    const r = await fetch(API, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    data = await r.json();
+    detectRestock(data);
+    render();
+    loadExtra();
+  } catch (e) {
+    const st = $("status"); st.className = "pill bad"; st.textContent = "gagal memuat: " + e.message;
+    const sb = $("staleBanner");
+    sb.hidden = false;
+    sb.textContent = "🚨 Tidak bisa mengambil data dari server (" + e.message + "). " + (data ? "Tampilan di bawah adalah data terakhir yang berhasil dimuat dan bisa sudah basi." : "Cek koneksi atau key dashboard.");
+    if (!data) { const l = $("list"); l.textContent = ""; l.append(el("div", "empty", "Tidak bisa terhubung ke server. Cek koneksi atau key dashboard.")); }
+  }
+}
+
+// ---- preferensi tersimpan
+for (const id of ["only", "favOnly", "vipOnly", "hotOnly", "compact", "beep", "notif", "wake"]) {
+  $(id).checked = !!store.get(id, false);
+  $(id).addEventListener("change", () => { store.set(id, $(id).checked); render(); });
+}
+$("sort").value = store.get("sort", "avail");
+if (!$("sort").value) $("sort").value = "avail";
+$("sort").onchange = () => { store.set("sort", $("sort").value); render(); };
+$("notif").addEventListener("change", async () => {
+  if ($("notif").checked && window.Notification && Notification.permission === "default") {
+    const p = await Notification.requestPermission();
+    if (p !== "granted") { $("notif").checked = false; store.set("notif", false); toast("Izin notifikasi ditolak di browser."); }
+  } else if ($("notif").checked && !window.Notification) {
+    $("notif").checked = false; toast("Browser ini tidak mendukung notifikasi.");
+  }
+});
+
+// ---- layar tetap nyala (Screen Wake Lock)
+async function setWake(on) {
+  try {
+    if (on) {
+      if (!("wakeLock" in navigator)) { $("wake").checked = false; store.set("wake", false); toast("Browser ini tidak mendukung penahan layar."); return; }
+      if (!wl) { wl = await navigator.wakeLock.request("screen"); wl.addEventListener("release", () => { wl = null; }); }
+    } else if (wl) { await wl.release(); wl = null; }
+  } catch {}
+}
+$("wake").addEventListener("change", () => setWake($("wake").checked));
+if ($("wake").checked) setWake(true);
+
+// ---- ekspor / impor favorit
+$("favExport").onclick = () => {
+  const blob = new Blob([JSON.stringify({ v: 1, favs: [...favs] }, null, 2)], { type: "application/json" });
+  const a = el("a"); a.href = URL.createObjectURL(blob); a.download = "jkt48-radar-favorit.json";
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast("Favorit diekspor (" + favs.size + ").");
+};
+$("favCopy").onclick = () => copyText(JSON.stringify({ v: 1, favs: [...favs] }));
+$("favImport").onclick = () => $("favFile").click();
+$("favFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    const arr = Array.isArray(j) ? j : j && j.favs;
+    if (!Array.isArray(arr)) throw new Error("format");
+    let n = 0;
+    for (const v of arr) { const k = norm(v); if (k && !favs.has(k)) { favs.add(k); n++; } }
+store.set("favs", [...favs]); render(); pushSyncSoon();
+    toast("Impor selesai: " + n + " favorit baru.");
+  } catch { toast("File tidak valid. Pakai file hasil ekspor dashboard ini."); }
+};
+
+const savedTheme = store.get("theme", "");
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next; store.set("theme", next);
+};
+$("toggleAll").onclick = e => {
+  const o = e.target.dataset.open !== "1";
+  e.target.dataset.open = o ? "1" : ""; e.target.textContent = o ? "Tutup semua" : "Buka semua";
+  if (!o) openMembers.clear();
+  render();
+};
+$("feedClear").onclick = e => { e.preventDefault(); e.stopPropagation(); feed = []; store.set("feed", feed); renderFeed(); };
+$("timelineMore").onclick = () => { timelineExpanded = !timelineExpanded; $("timelineMore").textContent = timelineExpanded ? "Tampilkan terbaru saja" : "Lihat semua aktivitas"; renderTimeline(); };
+$("alertMember").oninput = renderAlertCenter; $("alertScope").onchange = renderAlertCenter; $("alertEvent").onchange = renderAlertCenter;
+$("clearBuyPrep").onclick = () => { buyPrep=[]; store.set("buyPrep",buyPrep); renderBuyPrep(); toast("Antrean Auto Buy dibersihkan."); };
+$("refresh").onclick = load;
+$("date").onchange = $("q").oninput = render;
+$("lane").onchange = $("price").onchange = render;
+$("top").onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
+addEventListener("scroll", () => { $("top").style.display = scrollY > 600 ? "inline-flex" : "none"; }, { passive: true });
+const resetTitle = () => { unseen = 0; document.title = "JKT48 Ticket Radar"; };
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    resetTitle(); load();
+    if ($("wake").checked && !wl) setWake(true);
+  }
+});
+addEventListener("focus", resetTitle);
+
+// ---- Web Push (notifikasi walau tab ditutup)
+const KQ = KEY ? "?key=" + encodeURIComponent(KEY) : "";
+const PUSH = { reg: null, sub: null, key: "", ok: "serviceWorker" in navigator && "PushManager" in window && "Notification" in window };
+const b64ToU8 = s => {
+  const p = "=".repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(b, c => c.charCodeAt(0));
+};
+async function pushApi(path, body) {
+  const r = await fetch(path + KQ, body === undefined
+    ? { cache: "no-store" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+  return j;
+}
+async function pushSync() {
+  if (!PUSH.sub) return;
+  await pushApi("/api/push/subscribe", { subscription: PUSH.sub.toJSON(), prefs: { mode: $("pushMode").value, favs: [...favs] } });
+}
+let pushT = null;
+const pushSyncSoon = () => { clearTimeout(pushT); pushT = setTimeout(() => pushSync().catch(() => {}), 1500); };
+
+function pushRefresh() {
+  const info = $("pushInfo"), btn = $("pushToggle"), tst = $("pushTest"), mode = $("pushMode"), on = !!PUSH.sub;
+  btn.textContent = on ? "Matikan push" : "Aktifkan push";
+  btn.disabled = false;
+  tst.hidden = mode.hidden = !on;
+  if (!on && Notification.permission === "denied") {
+    info.textContent = "Izin notifikasi diblokir di browser. Buka pengaturan situs lalu izinkan notifikasi.";
+    btn.disabled = true; return;
+  }
+  info.textContent = on ? "✅ Aktif di perangkat ini. Notifikasi tetap masuk walau tab ditutup." : "Belum aktif di perangkat ini.";
+}
+async function pushInit() {
+  const info = $("pushInfo"), btn = $("pushToggle");
+  $("pushTest").hidden = $("pushMode").hidden = true;
+  if (!PUSH.ok) {
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    info.textContent = ios
+      ? "Di iPhone/iPad: buka menu Bagikan → Tambahkan ke Layar Utama, lalu buka dashboard dari ikon itu (iOS 16.4 ke atas)."
+      : "Browser ini tidak mendukung Web Push.";
+    btn.disabled = true; return;
+  }
+  try {
+    PUSH.reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const k = await pushApi("/api/push/key");
+    if (!k.enabled) { info.textContent = "Push belum aktif di server (VAPID key belum diatur)."; btn.disabled = true; return; }
+    PUSH.key = k.key;
+    PUSH.sub = await PUSH.reg.pushManager.getSubscription();
+    if (PUSH.sub) pushSync().catch(() => {});   // menyegarkan data di server (mis. setelah server direset)
+    pushRefresh();
+  } catch (e) { info.textContent = "Gagal menyiapkan push: " + e.message; btn.disabled = true; }
+}
+$("pushToggle").onclick = async () => {
+  try {
+    if (PUSH.sub) {
+      const ep = PUSH.sub.endpoint;
+      await PUSH.sub.unsubscribe(); PUSH.sub = null;
+      await pushApi("/api/push/unsubscribe", { endpoint: ep }).catch(() => {});
+      toast("Push dimatikan.");
+    } else {
+      const p = await Notification.requestPermission();
+      if (p !== "granted") { toast("Izin notifikasi ditolak."); pushRefresh(); return; }
+      PUSH.sub = await PUSH.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(PUSH.key) });
+      try { await pushSync(); }
+      catch (e) { await PUSH.sub.unsubscribe(); PUSH.sub = null; throw e; }
+      toast("Push aktif. Notifikasi tetap masuk walau tab ditutup.");
+    }
+  } catch (e) { toast("Gagal: " + e.message); }
+  pushRefresh();
+};
+$("pushTest").onclick = async () => {
+  try { await pushApi("/api/push/test", { endpoint: PUSH.sub.endpoint }); toast("Tes dikirim. Notifikasi akan muncul sebentar lagi."); }
+  catch (e) { toast("Tes gagal: " + e.message); }
+};
+$("pushMode").value = store.get("pushMode", "all");
+if (!$("pushMode").value) $("pushMode").value = "all";
+$("pushMode").onchange = () => { store.set("pushMode", $("pushMode").value); pushSyncSoon(); };
+pushInit();
+
+// ---- bisa dipasang seperti aplikasi (ikon & manifest dibuat saat halaman dimuat)
+// ---- bisa dipasang seperti aplikasi (manifest & ikon disajikan server)
+(function pwa() {
+  try {
+    const add = (rel, href, type) => { const l = document.createElement("link"); l.rel = rel; l.href = href; if (type) l.type = type; document.head.append(l); };
+    add("icon", "/icon-192.png", "image/png");
+    add("apple-touch-icon", "/apple-touch-icon.png");
+    add("manifest", "/manifest.webmanifest" + KQ);
+  } catch {}
+})();
+
+{ const l = $("list"); for (let i = 0; i < 4; i++) l.append(el("div", "sk")); }
+renderFeed();
+let pollTimer = null;
+function setPoll(ms) { clearInterval(pollTimer); pollTimer = setInterval(() => { if (!document.hidden) load(); }, ms); }
+load(); setPoll(10000);
+</script>
+
+<script>
+(() => {
+  "use strict";
+  const toggle = document.getElementById("radarTopToggle");
+  const panel = document.getElementById("radarTopContent");
+  const label = document.getElementById("radarTopToggleText");
+  if (!toggle || !panel) return;
+
+  const KEY = "jkt48-radar-top-panel-open";
+  const count = document.getElementById("radarTopToggleCount");
+
+  function setOpen(open, save = true) {
+    panel.classList.toggle("is-open", open);
+    panel.classList.toggle("is-closed", !open);
+    toggle.classList.toggle("is-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    label.textContent = open ? "Tutup filter" : "Buka filter";
+    if (count) count.textContent = open ? "8" : "☰";
+    if (save) localStorage.setItem(KEY, open ? "1" : "0");
+  }
+
+  toggle.addEventListener("click", () => {
+    setOpen(!panel.classList.contains("is-open"));
+  });
+
+  const saved = localStorage.getItem(KEY);
+  setOpen(saved !== "0", false);
+})();
+</script>
+
+<style id="war-css">
+#toasts{z-index:70}
+#war{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;gap:12px;overflow:auto;background:var(--bg);color:var(--text);padding:max(12px,env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px))}
+#war.on{display:flex}
+.war-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.war-top h2{margin:0;font-size:18px;flex:1}
+#warClock{font-variant-numeric:tabular-nums;font-weight:800}
+#warWarn{display:none;color:#fff;background:var(--no);border-radius:12px;padding:8px 12px;font-weight:700}
+.war-main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;min-height:240px}
+#warState{font-size:clamp(18px,5vw,28px);font-weight:800}
+#warBuy{width:100%;max-width:640px;min-height:120px;flex-direction:column;justify-content:center;gap:4px;border-radius:20px;font-size:clamp(24px,8vw,40px);font-weight:900;background:linear-gradient(135deg,#ff1763,#e80f58);border-color:#ff1763;color:#fff;box-shadow:0 12px 32px rgba(255,23,99,.35)}
+#warBuy small{font-size:13px;font-weight:600;opacity:.92}
+#warBuy.idle{background:var(--soft);border-color:var(--line);color:var(--text);box-shadow:none}
+.war-list{width:100%;max-width:760px;margin:0 auto;display:grid;gap:8px}
+.war-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border:1px solid var(--line);border-left:5px solid var(--ok);border-radius:14px;background:var(--card);padding:12px}
+.war-row b{font-size:17px;display:block}.war-row small{color:var(--mut)}
+.war-q{font-size:30px;font-weight:900;color:var(--ok)}.war-q.low{color:var(--warn)}
+.war-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.war-chip{cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:999px;padding:5px 10px;font:inherit;font-size:12px}
+.war-chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
+#warFlash{position:fixed;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;background:rgba(22,163,74,.96);color:#fff;text-decoration:none;padding:24px}
+#warFlash.on{display:flex;animation:warBlink .5s ease-in-out 6}
+#warFlash b{font-size:clamp(30px,10vw,64px)}#warFlash span{font-size:clamp(16px,5vw,26px)}
+@keyframes warBlink{50%{background:rgba(255,23,99,.96)}}
+@media(prefers-reduced-motion:reduce){#warFlash.on{animation:none}}
+</style>
+<script>
+(() => {
+  "use strict";
+  const SK = "warSess";
+  let on = false, sel = new Set(store.get(SK, [])), prevQ = new Map(), prevSale = new Map(), first = true;
+  let flashT = null, clockT = null, keepT = null, before = null, chipSig = "", ac = null;
+
+  const sessKey = (code, l) => [code, l.date, l.start, l.end, l.session].join("|");
+  const isTarget = (code, l) => (!favs.size || favs.has(norm(l.member))) && (!sel.size || sel.has(sessKey(code, l)));
+  const post = (path, body) => fetch(path + KQ, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).catch(() => {});
+  const ack = () => { try { navigator.sendBeacon("/api/ack" + KQ, new Blob(["{}"], { type: "application/json" })); } catch {} };
+
+  function unlockAudio() {
+    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === "suspended") ac.resume(); } catch {}
+  }
+  function alarm() {
+    try {
+      unlockAudio();
+      [0, .28, .56].forEach((t, i) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = "square"; o.frequency.value = i === 2 ? 1175 : 880; g.gain.value = .12;
+        o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .2);
+      });
+    } catch {}
+  }
+
+  // ---- kerangka overlay
+  const root = document.createElement("div"); root.id = "war";
+  root.innerHTML =
+    '<div class="war-top"><h2>⚔ WAR MODE</h2><span class="pill" id="warAge">-</span><span class="pill" id="warClock">--:--:--</span><button class="btn" id="warExit" type="button">Keluar</button></div>' +
+    '<div id="warWarn" role="alert"></div>' +
+    '<details class="help" id="warSessBox"><summary><span id="warSessTxt">Sesi target</span></summary><div class="body"><div class="acts"><button class="btn" id="warAll" type="button">Semua sesi</button></div><div class="war-chips" id="warChips"></div></div></details>' +
+    '<div class="war-main"><div id="warState">…</div><a id="warBuy" class="btn idle" target="_blank" rel="noopener"></a><div id="warNote" style="color:var(--mut);font-size:12px"></div></div>' +
+    '<div class="war-list" id="warList"></div>';
+  document.body.append(root);
+
+  const flashEl = document.createElement("a");
+  flashEl.id = "warFlash"; flashEl.target = "_blank"; flashEl.rel = "noopener";
+  flashEl.innerHTML = "<b></b><span></span>";
+  document.body.append(flashEl);
+  flashEl.addEventListener("click", () => { ack(); flashEl.classList.remove("on"); });
+
+  const tg = el("button", "btn", "⚔ War Mode"); tg.id = "warToggle"; tg.type = "button";
+  const anchor = $("radarTopToggle"); anchor.parentNode.insertBefore(tg, anchor);
+
+  function flash(title, sub, code) {
+    flashEl.querySelector("b").textContent = title;
+    flashEl.querySelector("span").textContent = sub || "";
+    flashEl.href = buyFor(code);
+    flashEl.classList.remove("on"); void flashEl.offsetWidth; flashEl.classList.add("on");
+    clearTimeout(flashT); flashT = setTimeout(() => flashEl.classList.remove("on"), 4000);
+    try { navigator.vibrate && navigator.vibrate([300, 120, 300, 120, 600]); } catch {}
+    alarm();
+  }
+
+  // ---- deteksi restock target + penjualan dibuka
+  function detect(json) {
+    const hits = [];
+    for (const [code, ev] of Object.entries(json.events)) {
+      const was = prevSale.get(code), nowSale = ev.sale || "open";
+      prevSale.set(code, nowSale);
+      if (was === "waiting" && nowSale !== "waiting") flash("🚀 PENJUALAN DIBUKA", ev.name, code);
+      for (const l of ev.lanes) {
+        const k = code + "|" + l.sdc, p = prevQ.get(k);
+        if (!first && on && p !== undefined && l.quota > p && isTarget(code, l)) hits.push({ code, ev, l, d: l.quota - p });
+        prevQ.set(k, l.quota);
+      }
+    }
+    first = false;
+    if (hits.length) {
+      hits.sort((a, b) => b.d - a.d);
+      const h = hits[0];
+      flash("🟢 RESTOCK +" + h.d,
+        h.l.member + " · " + h.ev.name + " · " + (h.l.session || "Sesi") + " " + h.l.start + " · " + h.l.lane +
+        (hits.length > 1 ? " (+" + (hits.length - 1) + " lagi)" : ""), h.code);
+    }
+  }
+
+  // ---- render overlay
+  function warRender() {
+    if (!on || !data) return;
+    const now = data.now, evs = Object.entries(data.events);
+
+    const sess = new Map();
+    for (const [code, ev] of evs) for (const l of ev.lanes) {
+      const k = sessKey(code, l);
+      if (!sess.has(k)) sess.set(k, ev.name + " · " + (l.session || "Sesi") + " · " + sdate(l.date) + " " + l.start);
+    }
+    const keys = [...sess.keys()].sort(), sig = keys.join("\u0001"), box = $("warChips");
+    if (sig !== chipSig) {
+      chipSig = sig; box.textContent = "";
+      for (const k of keys) {
+        const b = el("button", "war-chip", sess.get(k)); b.type = "button"; b.dataset.k = k;
+        b.onclick = () => { sel.has(k) ? sel.delete(k) : sel.add(k); store.set(SK, [...sel]); warRender(); };
+        box.append(b);
+      }
+    }
+    for (const b of box.children) b.classList.toggle("on", sel.has(b.dataset.k));
+    const nSel = [...sel].filter(k => sess.has(k)).length;
+    $("warSessTxt").textContent = "Sesi target: " + (sel.size ? nSel + " dipilih" : "semua sesi");
+
+    let watched = 0; const rows = [];
+    for (const [code, ev] of evs) for (const l of ev.lanes) if (isTarget(code, l)) { watched++; if (l.quota > 0) rows.push({ code, ev, l }); }
+    rows.sort((a, b) => (b.l.restock_at || 0) - (a.l.restock_at || 0) || b.l.quota - a.l.quota);
+
+    const waiting = evs.filter(([, e]) => e.sale === "waiting").map(([, e]) => e.name);
+    const stale = evs.filter(([, e]) => !e.updated || now - e.updated > data.stale_after).map(([, e]) => e.name);
+    const worst = evs.reduce((m, [, e]) => e.updated ? Math.max(m, now - e.updated) : m, 0);
+    $("warAge").textContent = "data " + Math.round(worst) + " dtk";
+    const w = $("warWarn"); w.style.display = stale.length ? "block" : "none";
+    w.textContent = "🚨 DATA LAMA: " + stale.join(", ") + ". Restock tidak terdeteksi sampai pulih.";
+
+    const best = rows[0], buy = $("warBuy");
+    $("warState").textContent = best ? "🟢 " + rows.length + " jalur target tersedia"
+      : waiting.length ? "⏳ Penjualan belum dibuka: " + waiting.join(", ")
+      : "⏳ Menunggu restock… (" + watched + " jalur dipantau)";
+    buy.textContent = "";
+    if (best) {
+      buy.href = buyFor(best.code); buy.classList.remove("idle");
+      buy.append(el("span", "", "🛒 BELI SEKARANG"),
+        el("small", "", best.l.member + " · " + (best.l.session || "Sesi") + " " + best.l.start + " · " + best.l.lane + " · " + best.l.quota + " tiket"));
+    } else {
+      buy.href = buyFor(data.events[tab] ? tab : evs[0][0]); buy.classList.add("idle");
+      buy.append(el("span", "", "🛒 Buka halaman beli"));
+    }
+    $("warNote").textContent = favs.size ? "" : "Belum ada favorit, jadi semua member dipantau. Keluar lalu tandai ⭐ untuk mempersempit.";
+
+    const list = $("warList"); list.textContent = "";
+    for (const { code, ev, l } of rows.slice(0, 12)) {
+      const r = el("div", "war-row"), left = el("div");
+      left.append(el("b", "", l.member),
+        el("small", "", ev.name + " · " + (l.session || "Sesi") + " " + sdate(l.date) + " " + l.start + " · " + l.lane + " · " + rp(l.price)));
+      const q = el("span", "war-q" + (l.quota <= LOW_QUOTA ? " low" : ""), String(l.quota));
+      const a = withIcon("a", "btn buyp", "cart", "Beli"); a.href = buyFor(code); a.target = "_blank"; a.rel = "noopener";
+      r.append(left, q, a); list.append(r);
+    }
+  }
+
+  // ---- masuk / keluar
+  async function enter(resume) {
+    if (on) return;
+    on = true; store.set("war", true);
+    if (resume) before = store.get("warBefore", { beep: false, notif: false, wake: false });
+    else {
+      before = { beep: $("beep").checked, notif: $("notif").checked, wake: $("wake").checked };
+      store.set("warBefore", before);
+    }
+    unlockAudio();
+    if (!resume && window.Notification && Notification.permission === "default") { try { await Notification.requestPermission(); } catch {} }
+    $("beep").checked = true;
+    $("notif").checked = !!(window.Notification && Notification.permission === "granted");
+    $("wake").checked = true; setWake(true);
+    for (const id of ["beep", "notif", "wake"]) store.set(id, $(id).checked);
+    setPoll(4000);
+    root.classList.add("on"); document.body.style.overflow = "hidden";
+    tg.textContent = "⚔ War Mode ON"; tg.classList.add("buyp");
+    post("/api/war", { minutes: 90 });
+    keepT = setInterval(() => post("/api/war", { minutes: 90 }), 600000);
+    clockT = setInterval(() => { $("warClock").textContent = new Date().toLocaleTimeString("id-ID"); }, 1000);
+    load(); warRender();
+  }
+  function exit() {
+    if (!on) return;
+    on = false; store.set("war", false);
+    clearInterval(keepT); clearInterval(clockT);
+    post("/api/war", { minutes: 0 });
+    setPoll(10000);
+    root.classList.remove("on"); document.body.style.overflow = "";
+    tg.textContent = "⚔ War Mode"; tg.classList.remove("buyp");
+    const b = before || {};
+    for (const id of ["beep", "notif", "wake"]) { $(id).checked = !!b[id]; store.set(id, !!b[id]); }
+    if (!b.wake) setWake(false);
+    render();
+  }
+
+  tg.onclick = () => on ? exit() : enter(false);
+  $("warExit").onclick = exit;
+  $("warAll").onclick = () => { sel.clear(); store.set(SK, []); warRender(); };
+  addEventListener("keydown", e => { if (e.key === "Escape" && on) exit(); });
+  document.addEventListener("pointerdown", unlockAudio, { once: true });
+  // klik tombol Beli mana pun = "saya sedang urus" (menjeda eskalasi kanal cadangan)
+  document.addEventListener("click", e => {
+    const a = e.target.closest && e.target.closest('a[href*="jkt48.com/purchase"]');
+    if (a) ack();
+  }, true);
+
+  // ---- pasang ke alur yang sudah ada
+  const _detect = window.detectRestock, _render = window.render;
+  window.detectRestock = json => { _detect(json); try { detect(json); } catch {} };
+  window.render = function () { _render(); try { warRender(); } catch {} };
+
+  if (store.get("war", false)) enter(true);
+})();
+</script>
+
+
+<script>
+/* =========================================================
+   RADAR COMMAND CENTER — SMART CLIENT FEATURES
+   ========================================================= */
+(() => {
+  let focusOn = false;
+  let lastLoadMark = Date.now();
+  const rc = id => document.getElementById(id);
+
+  function radarAge(ts) {
+    if (!ts) return "belum ada";
+    const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (sec < 5) return "baru saja";
+    if (sec < 60) return sec + " dtk lalu";
+    const min = Math.floor(sec / 60);
+    return min + " mnt lalu";
+  }
+
+  function radarRows() {
+    if (!data || !data.events) return [];
+    const out = [];
+    for (const [code, ev] of Object.entries(data.events)) {
+      for (const l of (ev.lanes || [])) out.push({...l, code, event: ev.name});
+    }
+    return out;
+  }
+
+  function radarHotData() {
+    const rows = radarRows();
+    const now = data?.now || Math.floor(Date.now()/1000);
+    const by = new Map();
+    for (const l of rows) {
+      if (!by.has(l.member)) by.set(l.member, {member:l.member, quota:0, lanes:0, rate:0, recent:0, available:0, vip:false});
+      const x = by.get(l.member);
+      x.quota += Number(l.quota || 0);
+      x.lanes++;
+      x.rate += Number(l.rate || 0);
+      if (Number(l.quota || 0) > 0) x.available++;
+      if (l.vip) x.vip = true;
+      if (l.restock_at && now - l.restock_at < 600) x.recent += Number(l.quota || 0);
+    }
+    return [...by.values()].map(x => {
+      x.score = (x.recent * 5) + (x.rate * 2) + Math.min(x.quota, 30) + (x.available * 1.5) + (x.vip ? 2 : 0);
+      return x;
+    }).sort((a,b)=>b.score-a.score).slice(0,5);
+  }
+
+  function renderHot() {
+    const box = rc("radarHotList");
+    if (!box) return;
+    const hot = radarHotData();
+    box.textContent = "";
+    if (!hot.length) {
+      box.append(el("div","radar-empty","Belum ada data member."));
+      return;
+    }
+    const max = Math.max(1, ...hot.map(x=>x.score));
+    hot.forEach((x,i) => {
+      const item = el("div","radar-hot-item");
+      item.title = "Tampilkan " + x.member;
+      item.onclick = () => {
+        const q = $("q");
+        if (q) { q.value = x.member; render(); q.scrollIntoView({behavior:"smooth",block:"center"}); }
+      };
+      const top = el("div","radar-hot-top");
+      top.append(el("span","radar-hot-rank","#"+(i+1)),el("span","radar-hot-name",x.member + (x.vip ? " ★" : "")));
+      const meta = el("div","radar-hot-meta");
+      meta.append(el("span","",x.available+" jalur"),el("strong","",x.quota.toLocaleString("id-ID")+" tiket"));
+      const bar = el("div","radar-hot-bar"), fill = document.createElement("i");
+      fill.style.width = Math.max(8, Math.round(x.score/max*100))+"%";
+      bar.append(fill);
+      item.append(top,meta,bar);
+      box.append(item);
+    });
+  }
+
+  function renderCommand() {
+    if (!rc("radarCommand")) return;
+    const rows = radarRows();
+    const now = data?.now || Math.floor(Date.now()/1000);
+    const currentEvent = data?.events?.[tab];
+    const stale = currentEvent?.updated ? now-currentEvent.updated > (data.stale_after || 90) : true;
+    const ten = feed.filter(f => f.at && (Date.now()-f.at*1000) <= 600000);
+    const velocity = rows.reduce((a,l)=>a+Number(l.rate||0),0);
+    const hot = radarHotData()[0];
+
+    rc("rcStatus").textContent = stale ? "STALE" : "LIVE";
+    rc("rcStatus").style.color = stale ? "var(--warn)" : "var(--ok)";
+    rc("rcUpdated").textContent = currentEvent?.updated ? radarAge(currentEvent.updated*1000) : "menunggu data";
+    rc("rcRestock").textContent = String(ten.length);
+    rc("rcHot").textContent = hot ? hot.member : "—";
+    rc("rcHotSub").textContent = hot ? (hot.quota.toLocaleString("id-ID")+" tiket · "+hot.available+" jalur") : "menunggu data";
+    rc("rcVelocity").textContent = velocity ? velocity.toFixed(1) : "0";
+    const interval = Number(data?.poller?.interval || 10);
+    const elapsed = Math.floor((Date.now()-lastLoadMark)/1000);
+    rc("rcNext").textContent = Math.max(0,interval-(elapsed%interval))+"s";
+  }
+
+  function renderAllEnhancements() {
+    renderCommand();
+    renderHot();
+  }
+
+  /* Reset the countdown whenever the dashboard successfully changes data. */
+  const originalRender = window.render;
+  if (typeof originalRender === "function") {
+    window.render = function() {
+      const r = originalRender.apply(this, arguments);
+      lastLoadMark = Date.now();
+      renderAllEnhancements();
+      return r;
+    };
+  }
+
+  /* Focus Mode: a cleaner "sniper" layout for restock hunting. */
+  rc("rcFocus").onclick = () => {
+    focusOn = !focusOn;
+    document.body.classList.toggle("radar-focus", focusOn);
+    rc("rcFocus").classList.toggle("focus-on", focusOn);
+    rc("rcFocus").textContent = focusOn ? "◉ Focus ON" : "◉ Focus";
+    toast(focusOn ? "Focus Mode aktif — hanya panel penting ditampilkan." : "Focus Mode dimatikan.");
+  };
+  rc("rcTop").onclick = () => window.scrollTo({top:0,behavior:"smooth"});
+
+  /* Keyboard shortcuts: / search, R refresh, F focus, Esc exit focus. */
+  addEventListener("keydown", e => {
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+      if (e.key === "Escape" && document.activeElement === $("q")) {
+        $("q").blur();
+      }
+      return;
+    }
+    if (e.key === "/") { e.preventDefault(); $("q")?.focus(); }
+    else if (e.key.toLowerCase() === "r") { e.preventDefault(); load(); toast("Radar diperbarui."); }
+    else if (e.key.toLowerCase() === "f") { e.preventDefault(); rc("rcFocus").click(); }
+    else if (e.key === "Escape" && focusOn) rc("rcFocus").click();
+  });
+
+  /* Keep the command center responsive even between polls. */
+  setInterval(() => {
+    renderCommand();
+    if (!document.hidden && data) renderHot();
+  }, 1000);
+
+  setTimeout(renderAllEnhancements, 50);
+})();
+</script>
+
+
+<script>
+/* =========================================================
+   RADAR SUITE — 12 FEATURES
+   Client-side only; uses the existing radar API/data model.
+   ========================================================= */
+(() => {
+  const K = {watch:'r12_watch', hist:'r12_history', rules:'r12_rules', bm:'r12_bookmarks'};
+  const get = (k,d=[]) => { try { const x=JSON.parse(localStorage.getItem(k)); return x ?? d; } catch { return d; } };
+  const put = (k,v) => localStorage.setItem(k,JSON.stringify(v));
+  let watch = new Set(get(K.watch,[]).map(x=>String(x)));
+  let history = get(K.hist,[]);
+  let rules = get(K.rules,[]);
+  let bookmarks = get(K.bm,[]);
+  let lastFeedSig = null, initialized = false, currentFlash = null;
+
+  const q = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const memberKey = s => String(s||'').trim().toLowerCase();
+  const watched = name => watch.has(memberKey(name));
+  const rows = () => {
+    if (!window.data?.events) return [];
+    const out=[]; for (const [code,ev] of Object.entries(data.events)) for (const l of (ev.lanes||[])) out.push({...l,code,event:ev.name,updated:ev.updated});
+    return out;
+  };
+  const scoreMap = () => {
+    const rs=rows(), now=data?.now||Math.floor(Date.now()/1000), m=new Map();
+    for(const l of rs){
+      const k=memberKey(l.member); if(!m.has(k))m.set(k,{member:l.member,quota:0,available:0,lanes:0,rate:0,recent:0,vip:false,fav:false,last:0,events:new Set()});
+      const x=m.get(k); const quota=Number(l.quota||0), rate=Number(l.rate||0); x.quota+=quota; x.lanes++; x.rate+=rate; if(quota>0)x.available++; if(l.vip)x.vip=true; if(watched(l.member))x.fav=true; x.last=Math.max(x.last,Number(l.restock_at||0)); x.events.add(l.event);
+      if(l.restock_at && now-Number(l.restock_at)<=900) x.recent+=Math.max(0,quota);
+    }
+    const arr=[...m.values()]; const maxQ=Math.max(1,...arr.map(x=>x.quota)); const maxR=Math.max(1,...arr.map(x=>x.rate));
+    for(const x of arr){ const raw=(x.quota/maxQ)*30+(x.recent/Math.max(1,maxQ))*25+(x.rate/maxR)*15+Math.min(x.available,10)*2+(x.vip?10:0)+(x.fav?10:0); x.score=Math.min(100,Math.round(raw)); }
+    return arr.sort((a,b)=>b.score-a.score);
+  };
+  const scoreFor = member => scoreMap().find(x=>memberKey(x.member)===memberKey(member))?.score||0;
+  const latest = () => (Array.isArray(feed)?feed:[]).slice().sort((a,b)=>Number(b.at||0)-Number(a.at||0))[0];
+  const addWatch = name => { if(!name)return; const key=memberKey(name); watch.add(key); put(K.watch,[...watch]); renderAll(); };
+  const removeWatch = name => { watch.delete(memberKey(name)); put(K.watch,[...watch]); renderAll(); };
+  const addHistory = f => { if(!f?.member)return; const key=[f.member,f.sdc,f.at,f.delta].join('|'); if(history.some(x=>x.key===key))return; history.unshift({...f,key,score:scoreFor(f.member),savedAt:Date.now()}); history=history.slice(0,200); put(K.hist,history); };
+
+  function renderScores(){
+    const box=q('r12Scores'); if(!box)return; const arr=scoreMap().slice(0,7); box.innerHTML='';
+    if(!arr.length){box.innerHTML='<div class="r12-empty">Belum ada data.</div>';return;}
+    q('r12TopScore').textContent=arr[0].score+'/100';
+    const max=Math.max(1,...arr.map(x=>x.score));
+    arr.forEach((x,i)=>{ const d=document.createElement('div');d.className='r12-row';d.onclick=()=>focusMember(x.member);d.innerHTML=`<div class="r12-title"><span>${i+1}. ${esc(x.member)} ${x.vip?'★':''}</span><span class="r12-score ${x.score>=80?'hot':''}">${x.score}/100</span></div><div class="r12-sub">${x.quota.toLocaleString('id-ID')} tiket · ${x.available} jalur · velocity ${x.rate.toFixed(1)}</div><div class="r12-bar"><i style="width:${Math.max(4,x.score/max*100)}%"></i></div>`;box.append(d);});
+  }
+  function renderWatch(){
+    const box=q('r12WatchList'); if(!box)return; q('r12WatchCount').textContent=watch.size; box.innerHTML='';
+    if(!watch.size){box.innerHTML='<div class="r12-empty">Belum ada watchlist.</div>';return;}
+    [...watch].forEach(k=>{const actual=scoreMap().find(x=>memberKey(x.member)===k)?.member||k;const d=document.createElement('div');d.className='r12-row r12-watch';d.innerHTML=`<span>⭐ ${esc(actual)}</span><button class="btn" type="button">Hapus</button>`;d.querySelector('button').onclick=e=>{e.stopPropagation();removeWatch(actual)};d.onclick=()=>focusMember(actual);box.append(d);});
+  }
+  function focusMember(name){const inp=q('q');if(inp){inp.value=name; if(typeof render==='function')render();}q('r12MemberSelect').value=name; renderMember(); q('r12MemberSelect').scrollIntoView({behavior:'smooth',block:'center'});}
+  function renderMemberOptions(){const s=q('r12MemberSelect');if(!s)return;const names=scoreMap().map(x=>x.member).sort((a,b)=>String(a).localeCompare(String(b)));const cur=s.value;s.innerHTML='<option value="">Pilih member…</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');if(names.includes(cur))s.value=cur;}
+  function renderMember(){
+    const name=q('r12MemberSelect')?.value, stat=q('r12MemberStats'), hist=q('r12MemberHistory'); if(!stat||!hist)return;stat.innerHTML='';hist.innerHTML='';
+    if(!name){stat.innerHTML='<div class="r12-mini"><b>—</b><span>pilih member</span></div>';return;}
+    const x=scoreMap().find(v=>memberKey(v.member)===memberKey(name));const hs=history.filter(v=>memberKey(v.member)===memberKey(name)).slice(0,8);
+    const vals=[[x?.score||0,'Heat score'],[x?.quota||0,'Tiket tersedia'],[x?.available||0,'Jalur tersedia'],[x?.rate?.toFixed(1)||0,'Velocity']];vals.forEach(([a,b])=>{const d=document.createElement('div');d.className='r12-mini';d.innerHTML=`<b>${a}</b><span>${b}</span>`;stat.append(d);});
+    if(!hs.length){hist.innerHTML='<div class="r12-empty">Belum ada histori member ini.</div>';return;}hs.forEach(f=>{const d=document.createElement('div');d.className='r12-row';d.innerHTML=`<b>+${Number(f.delta||0).toLocaleString('id-ID')} · ${esc(f.event||'')}</b><div class="r12-sub">${esc(f.lane||'')} · ${esc(f.session||'')} · ${f.at?new Date(f.at*1000).toLocaleString('id-ID'):''}</div>`;hist.append(d);});
+  }
+  function renderHistory(){const box=q('r12History');if(!box)return;box.innerHTML='';if(!history.length){box.innerHTML='<div class="r12-empty">Belum ada riwayat.</div>';return;}history.slice(0,40).forEach(f=>{const d=document.createElement('div');d.className='r12-row';d.innerHTML=`<div class="r12-title"><span>+${Number(f.delta||0).toLocaleString('id-ID')} · ${esc(f.member)}</span><span class="r12-score">${f.score||0}/100</span></div><div class="r12-sub">${esc(f.event||'')} · ${esc(f.lane||'')} · ${esc(f.session||'')} · ${f.at?new Date(f.at*1000).toLocaleTimeString('id-ID'):''}</div>`;box.append(d);});}
+  function renderRanking(){const box=q('r12Ranking');if(!box)return;box.innerHTML='';scoreMap().slice(0,10).forEach((x,i)=>{const d=document.createElement('div');d.className='r12-row';d.innerHTML=`<div class="r12-rank"><span class="r12-ranknum">${i+1}</span><span style="flex:1"><b>${esc(x.member)}</b><div class="r12-sub">${x.quota.toLocaleString('id-ID')} tiket · ${x.available} jalur</div></span><span class="r12-score">${x.score}</span></div>`;d.onclick=()=>focusMember(x.member);box.append(d);});if(!box.children.length)box.innerHTML='<div class="r12-empty">Belum ada ranking.</div>';}
+  function nextSession(){
+    const rs=rows(), now=new Date(); let best=null;
+    for(const l of rs){ if(!l.date||!l.start)continue; const d=new Date(`${l.date}T${String(l.start).slice(0,5)}:00`); if(Number.isNaN(d.getTime())||d<=now)continue; if(!best||d<best.d)best={d,l}; }
+    return best;
+  }
+  function renderCountdown(){const c=q('r12Countdown'),sub=q('r12NextSession'),w=q('r12Window');if(!c)return;const n=nextSession();if(!n){c.textContent='--:--:--';sub.textContent='Tidak ada sesi mendatang yang terdeteksi.';w.textContent='—';return;}const sec=Math.max(0,Math.floor((n.d-Date.now())/1000));const h=String(Math.floor(sec/3600)).padStart(2,'0'),m=String(Math.floor(sec%3600/60)).padStart(2,'0'),s=String(sec%60).padStart(2,'0');c.textContent=`${h}:${m}:${s}`;sub.textContent=`${n.l.member||'—'} · ${n.l.event||''} · ${n.l.session||''} · ${n.l.start}`;w.textContent=sec<300?'WAR WINDOW':'NEXT SESSION';}
+  function renderBookmarks(){const box=q('r12Bookmarks');if(!box)return;box.innerHTML='';if(!bookmarks.length){box.innerHTML='<div class="r12-empty">Belum ada bookmark.</div>';return;}bookmarks.forEach((b,i)=>{const d=document.createElement('div');d.className='r12-row';d.innerHTML=`<div class="r12-title"><span>🔖 ${esc(b.member)} · ${esc(b.session||'')}</span><button class="btn">Hapus</button></div><div class="r12-sub">${esc(b.event||'')} · ${esc(b.date||'')} · ${esc(b.start||'')}</div>`;d.querySelector('button').onclick=e=>{e.stopPropagation();bookmarks.splice(i,1);put(K.bm,bookmarks);renderBookmarks()};d.onclick=()=>focusMember(b.member);box.append(d);});}
+  function renderReco(){const box=q('r12Reco');if(!box)return;box.innerHTML='';const arr=scoreMap().slice(0,4);arr.forEach((x,i)=>{const d=document.createElement('div');d.className='r12-card';d.style.margin=0;d.innerHTML=`<div class="r12-title"><span>${i+1}. ${esc(x.member)}</span><span class="r12-score ${x.score>=80?'hot':''}">${x.score}/100</span></div><div class="r12-sub">${x.available} jalur tersedia · ${x.quota.toLocaleString('id-ID')} tiket · ${x.vip?'VIP · ':''}${watched(x.member)?'WATCHLIST':''}</div><div class="r12-actions"><button class="btn">🎯 Fokus</button><button class="btn">⭐ ${watched(x.member)?'Hapus watch':'Watch'}</button></div>`;d.querySelectorAll('button')[0].onclick=()=>focusMember(x.member);d.querySelectorAll('button')[1].onclick=()=>watched(x.member)?removeWatch(x.member):addWatch(x.member);box.append(d);});if(!arr.length)box.innerHTML='<div class="r12-empty" style="grid-column:1/-1">Belum ada rekomendasi.</div>';}
+  function renderRules(){const box=q('r12Rules');if(!box)return;box.innerHTML='';if(!rules.length){box.innerHTML='<div class="r12-empty">Belum ada rule. Contoh: Nayla + minimal 20 tiket.</div>';return;}rules.forEach((r,i)=>{const d=document.createElement('div');d.className='r12-rule';d.innerHTML=`<div class="r12-rule-head"><b>${esc(r.member||'Semua member')} · ≥${r.min||1} tiket</b><label class="r12-toggle"><input type="checkbox" ${r.on?'checked':''}> aktif</label></div><div class="r12-sub">${r.flash?'Flash ':''}${r.sound?'Suara ':''}${r.notify?'Notifikasi ':''}${r.prep?'Auto Buy Prep':''}</div><div class="r12-rule-actions"><button class="btn">Hapus</button></div>`;d.querySelector('input').onchange=e=>{r.on=e.target.checked;put(K.rules,rules)};d.querySelector('button').onclick=()=>{rules.splice(i,1);put(K.rules,rules);renderRules()};box.append(d);});}
+  function flash(f){if(!f||!q('r12Flash'))return;currentFlash=f;q('r12FlashMember').textContent=f.member||'Member';q('r12FlashMeta').textContent=`${f.event||''} · ${f.lane||''} · ${f.session||''} · ${f.at?new Date(f.at*1000).toLocaleTimeString('id-ID'):''}`;q('r12FlashTicket').textContent='+'+Number(f.delta||0).toLocaleString('id-ID');q('r12FlashScore').textContent='🔥 Heat Score '+scoreFor(f.member)+'/100';q('r12Flash').classList.add('on');}
+  function maybeNotify(f){const hits=rules.filter(r=>r.on&&( !r.member || memberKey(r.member)===memberKey(f.member)) && Number(f.delta||0)>=Number(r.min||1));hits.forEach(r=>{if(r.flash) flash(f); if(r.sound&&typeof beep==='function')try{beep()}catch{};if(r.notify&&window.Notification&&Notification.permission==='granted')try{new Notification('JKT48 Restock', {body:`${f.member} +${f.delta} · ${f.event||''}`})}catch{};if(r.prep&&typeof prepareBuy==='function')try{prepareBuy(f)}catch{};});}
+  function detectNew(){const fs=Array.isArray(feed)?feed:[];const newest=fs.slice().sort((a,b)=>Number(b.at||0)-Number(a.at||0))[0];const sig=newest?[newest.member,newest.sdc,newest.at,newest.delta].join('|'):'';if(!initialized){lastFeedSig=sig;initialized=true;return;}if(sig&&sig!==lastFeedSig){const f=newest;addHistory(f);maybeNotify(f);if(scoreFor(f.member)>=50||watched(f.member)||isVipSafe(f))flash(f);lastFeedSig=sig;}else if(sig)lastFeedSig=sig;}
+  const isVipSafe=f=>{try{return typeof isVipFor==='function'&&isVipFor(f)}catch{return false}};
+  function renderMobile(){const card=q('r12MobileCard');if(!card)return;const f=latest();if(!f){card.innerHTML='<div class="r12-empty">Menunggu restock…</div>';return;}card.innerHTML=`<div class="r12-title"><span>🔥 ${esc(f.member)}</span><span class="r12-score">${scoreFor(f.member)}/100</span></div><div class="r12-kpi">+${Number(f.delta||0).toLocaleString('id-ID')}</div><div class="r12-sub">${esc(f.event||'')} · ${esc(f.lane||'')} · ${esc(f.session||'')}</div><div class="r12-actions"><a class="btn r12-mobile-buy" target="_blank" rel="noopener" href="${typeof buyFor==='function'?buyFor(f.code):'#'}">🛒 BELI SEKARANG</a><button class="btn" id="r12MPrep">⚡ Siapkan</button></div>`;q('r12MPrep').onclick=()=>{if(typeof prepareBuy==='function')prepareBuy(f)};q('r12MobileWatch').textContent=watch.size;const wb=q('r12MobileWatchList');wb.innerHTML=[...watch].map(k=>`<div class="r12-row">⭐ ${esc(k)}</div>`).join('')||'<div class="r12-empty">Kosong.</div>';}
+  function renderAll(){renderScores();renderWatch();renderMemberOptions();renderMember();renderHistory();renderRanking();renderRules();renderReco();renderBookmarks();renderCountdown();renderMobile();}
+
+  q('r12WatchAdd').onclick=()=>{const v=q('r12WatchInput').value.trim();if(v)addWatch(v);q('r12WatchInput').value='';};q('r12WatchInput').onkeydown=e=>{if(e.key==='Enter')q('r12WatchAdd').click()};
+  q('r12MemberSelect').onchange=renderMember;q('r12MemberFocus').onclick=()=>{const n=q('r12MemberSelect').value;if(n)focusMember(n)};
+  q('r12HistoryClear').onclick=()=>{history=[];put(K.hist,history);renderHistory();};
+  q('r12RuleAdd').onclick=()=>{const member=prompt('Member untuk alert (kosong = semua):','');const min=Number(prompt('Minimal tiket restock:', '20'));if(!Number.isFinite(min))return;rules.unshift({member:member||'',min,on:true,flash:true,sound:true,notify:false,prep:false});put(K.rules,rules);renderRules();toast('Alert rule dibuat.')};
+  q('r12BookmarkAdd').onclick=()=>{const rs=rows();const selected=q('r12MemberSelect').value;const l=rs.find(x=>memberKey(x.member)===memberKey(selected))||rs.find(x=>Number(x.quota)>0)||rs[0];if(!l){toast('Belum ada sesi yang bisa dibookmark.');return;}bookmarks.unshift({member:l.member,event:l.event,session:l.session,date:l.date,start:l.start,code:l.code});bookmarks=bookmarks.slice(0,50);put(K.bm,bookmarks);renderBookmarks();toast('Sesi dibookmark.');};
+  q('r12CountdownFocus').onclick=()=>{const n=nextSession();if(n)focusMember(n.l.member)};
+  q('r12WarToggle').onclick=()=>{const b=document.getElementById('warToggle');if(b)b.click();else toast('War Mode utama tidak ditemukan.')};
+  q('r12OpenTargets').onclick=()=>{const f=[...watch];if(!f.length){toast('Watchlist masih kosong.');return;}q('q').value=f[0];if(typeof render==='function')render();window.scrollTo({top:0,behavior:'smooth'});};
+  q('r12MobileOpen').onclick=()=>q('r12Mobile').classList.add('on');q('r12MobileClose').onclick=()=>q('r12Mobile').classList.remove('on');
+  q('r12FlashClose').onclick=()=>q('r12Flash').classList.remove('on');q('r12FlashPrep').onclick=()=>{if(currentFlash&&typeof prepareBuy==='function')prepareBuy(currentFlash);q('r12Flash').classList.remove('on')};q('r12FlashWatch').onclick=()=>{if(currentFlash)addWatch(currentFlash.member)};q('r12FlashBuy').onclick=()=>{if(currentFlash&&typeof buyFor==='function')window.open(buyFor(currentFlash.code),'_blank','noopener');};
+  q('r12Flash').onclick=e=>{if(e.target===q('r12Flash'))q('r12Flash').classList.remove('on')};
+
+  /* Keep history synced even if the core render function is wrapped by other modules. */
+  const timer=setInterval(()=>{try{detectNew();renderCountdown();renderMobile();renderCommandSafe();}catch{}},1000);
+  function renderCommandSafe(){const hot=scoreMap()[0];if(q('r12WarTargets'))q('r12WarTargets').textContent=watch.size;const interval=Number(data?.poller?.interval||10);if(q('r12WarPoll'))q('r12WarPoll').textContent=interval+'s';const wb=q('r12WarState');if(wb)wb.textContent=watch.size?'ARMED':'READY';}
+  const oldRender=window.render; if(typeof oldRender==='function'){window.render=function(){const r=oldRender.apply(this,arguments);setTimeout(renderAll,0);return r;};}
+  const oldDetect=window.detectRestock; if(typeof oldDetect==='function'){window.detectRestock=function(j){const r=oldDetect.apply(this,arguments);setTimeout(()=>{try{detectNew()}catch{};renderAll()},0);return r;};}
+  renderAll();
+})();
+</script>
+
+<script>
+/* ===== Feature visibility manager ===== */
+(() => {
+  const KEY = 'jkt48-radar-feature-visibility-v2';
+  const OPEN_KEY = 'jkt48-radar-feature-controls-open-v1';
+  const defaults = {
+    command:true, hotpicks:true, timeline:true, alertcenter:true, autobuy:true,
+    heat:true, watchlist:true, intelligence:true, countdown:true, war:true,
+    mobile:true, history:true, ranking:true, alerts:true, recommendation:true, bookmarks:true
+  };
+  const labels = Object.keys(defaults);
+  const q = id => document.getElementById(id);
+  const cards = () => [...document.querySelectorAll('.r12-feature-card[data-feature]')];
+  const blocks = () => [...document.querySelectorAll('.r12-visibility-block[data-feature-block]')];
+  const controls = () => [...document.querySelectorAll('[data-feature-toggle]')];
+  let state = {...defaults};
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    labels.forEach(k => { if (typeof saved[k] === 'boolean') state[k] = saved[k]; });
+  } catch {}
+
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+  function apply(){
+    cards().forEach(card => card.classList.toggle('is-hidden', state[card.dataset.feature] === false));
+    blocks().forEach(block => block.classList.toggle('is-hidden', state[block.dataset.featureBlock] === false));
+    controls().forEach(c => c.checked = state[c.dataset.featureToggle] !== false);
+    const suite = q('radarSuite');
+    if(suite) suite.classList.toggle('r12-none', labels.every(k => state[k] === false));
+    updatePresetState();
+  }
+  function updatePresetState(){
+    const vals = labels.map(k => !!state[k]);
+    document.querySelectorAll('.r12-display-preset').forEach(b => b.classList.remove('active'));
+    if(vals.every(Boolean)) document.querySelector('[data-preset="all"]')?.classList.add('active');
+    else if(vals.every(v => !v)) document.querySelector('[data-preset="none"]')?.classList.add('active');
+  }
+  function setAll(value){ labels.forEach(k => state[k] = value); save(); apply(); }
+  function setPreset(name){
+    if(name === 'all') return setAll(true);
+    if(name === 'none') return setAll(false);
+    if(name === 'hunting'){
+      labels.forEach(k => state[k] = ['command','hotpicks','timeline','alertcenter','autobuy','heat','watchlist','countdown','war','mobile','alerts','recommendation'].includes(k));
+      save(); apply(); return;
+    }
+    if(name === 'compact'){
+      labels.forEach(k => state[k] = ['command','hotpicks','timeline','heat','watchlist','countdown','ranking','recommendation'].includes(k));
+      save(); apply(); return;
+    }
+  }
+
+  function init(){
+    controls().forEach(c => c.addEventListener('change', () => {
+      state[c.dataset.featureToggle] = c.checked;
+      save(); apply();
+    }));
+    document.querySelectorAll('.r12-display-preset').forEach(b => b.addEventListener('click', () => setPreset(b.dataset.preset)));
+    const btn = q('r12DisplayToggle'), panel = q('r12FeatureControls');
+    if(btn && panel){
+      let open = true;
+      try { open = localStorage.getItem(OPEN_KEY) !== '0'; } catch {}
+      const setOpen = v => { open=v; panel.classList.toggle('is-collapsed', !v); btn.setAttribute('aria-expanded', String(v)); btn.textContent = v ? '⌃ Sembunyikan pengaturan' : '⚙ Atur fitur'; try{localStorage.setItem(OPEN_KEY,v?'1':'0')}catch{} };
+      btn.addEventListener('click', () => setOpen(!open));
+      setOpen(open);
+    }
+    apply();
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+</body>
+</html>
