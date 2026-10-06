@@ -1,11 +1,12 @@
+import hmac
 import logging
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import Body, FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -22,14 +23,12 @@ from .db import (
     recent_restocks,
     toggle_webhook,
 )
-
 from .monitor import (
     MonitorService,
     send_activation_message,
     send_test_message,
     snapshot,
 )
-
 from .security import (
     decrypt_webhook,
     encrypt_webhook,
@@ -41,10 +40,6 @@ from .security import (
 )
 
 
-# ============================================================
-# LOGGING
-# ============================================================
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
@@ -52,21 +47,11 @@ logging.basicConfig(
 
 logger = logging.getLogger("48group.main")
 
-
-# ============================================================
-# PATH / TEMPLATE / STATIC
-# ============================================================
-
 BASE_DIR = Path(__file__).resolve().parent
 
 templates = Jinja2Templates(
     directory=str(BASE_DIR / "templates")
 )
-
-
-# ============================================================
-# DISCORD WEBHOOK VALIDATION
-# ============================================================
 
 WEBHOOK_RE = re.compile(
     r"^https://(?:canary\.|ptb\.)?"
@@ -74,38 +59,30 @@ WEBHOOK_RE = re.compile(
     r"/api/webhooks/\d+/[A-Za-z0-9._-]+/?$"
 )
 
-
-# ============================================================
-# MONITOR SERVICE
-# ============================================================
-
 service = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     global service
 
     if not settings.app_secret:
-        raise RuntimeError(
-            "APP_SECRET wajib di-set."
-        )
+        raise RuntimeError("APP_SECRET wajib di-set.")
 
     if not settings.webhook_encryption_key:
-        raise RuntimeError(
-            "WEBHOOK_ENCRYPTION_KEY wajib di-set."
-        )
+        raise RuntimeError("WEBHOOK_ENCRYPTION_KEY wajib di-set.")
 
-    # Database harus dibuat terlebih dahulu
+    if not settings.collector_secret:
+        raise RuntimeError("COLLECTOR_SECRET wajib di-set.")
+
     init_db()
 
-    # Baru monitor dibuat setelah database siap
     service = MonitorService()
-
     service.start()
 
-    logger.info("48Group Monitor started.")
+    logger.info(
+        "48Group Monitor started in LOCAL COLLECTOR mode."
+    )
 
     try:
         yield
@@ -116,15 +93,10 @@ async def lifespan(app: FastAPI):
         logger.info("48Group Monitor stopped.")
 
 
-# ============================================================
-# FASTAPI
-# ============================================================
-
 app = FastAPI(
     title="48Group 2-Shot Monitor",
     lifespan=lifespan,
 )
-
 
 app.mount(
     "/static",
@@ -135,12 +107,7 @@ app.mount(
 )
 
 
-# ============================================================
-# AUTH HELPERS
-# ============================================================
-
 def current_user(request: Request):
-
     token = request.cookies.get("session")
 
     if not token:
@@ -155,47 +122,111 @@ def current_user(request: Request):
 
 
 def go_login():
-
     return RedirectResponse(
         "/login",
         status_code=303,
     )
 
 
-# ============================================================
-# HEALTH CHECK
-# ============================================================
+def _collector_token(request: Request):
+    authorization = request.headers.get(
+        "Authorization",
+        "",
+    )
+
+    if authorization.startswith("Bearer "):
+        return authorization[
+            len("Bearer "):
+        ].strip()
+
+    return request.headers.get(
+        "X-Collector-Token",
+        "",
+    ).strip()
+
 
 @app.get("/health")
 def health():
-
     state = snapshot()
 
     return JSONResponse(
         {
             "ok": True,
             "monitor_running": state["running"],
+            "mode": "local_collector",
+            "collector_last_seen": state.get(
+                "collector_last_seen"
+            ),
             "last_check": state["last_check"],
             "last_success": state["last_success"],
             "last_error": state["last_error"],
+            "groups": state["groups"],
         }
     )
 
 
-# ============================================================
-# DASHBOARD
-# ============================================================
+@app.post("/api/collector/snapshot")
+def collector_snapshot(
+    request: Request,
+    payload: dict = Body(...),
+):
+    token = _collector_token(request)
+
+    if (
+        not token
+        or not hmac.compare_digest(
+            token,
+            settings.collector_secret,
+        )
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid collector token.",
+        )
+
+    if service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Monitor service belum siap.",
+        )
+
+    try:
+        result = service.ingest_snapshot(
+            payload
+        )
+
+        return JSONResponse(
+            result
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        logger.exception(
+            "Collector snapshot gagal diproses."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            ),
+        ) from exc
+
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
-
     user = current_user(request)
 
     if not user:
         return go_login()
 
     state = snapshot()
-
     members = state["members"]
 
     available = [
@@ -205,7 +236,6 @@ def dashboard(request: Request):
     ]
 
     def stats(group_name):
-
         group_members = [
             m
             for m in members
@@ -220,7 +250,9 @@ def dashboard(request: Request):
 
         return {
             "total": len(group_members),
-            "available": len(available_members),
+            "available": len(
+                available_members
+            ),
             "sold_out": max(
                 0,
                 len(group_members)
@@ -230,12 +262,12 @@ def dashboard(request: Request):
 
     hooks = []
 
-    for row in list_user_webhooks(user["id"]):
-
+    for row in list_user_webhooks(
+        user["id"]
+    ):
         hook = dict(row)
 
         try:
-
             webhook_url = decrypt_webhook(
                 row["webhook_url_enc"]
             )
@@ -245,7 +277,6 @@ def dashboard(request: Request):
             )
 
         except Exception:
-
             hook["masked_url"] = (
                 "[encryption key mismatch]"
             )
@@ -273,16 +304,11 @@ def dashboard(request: Request):
     )
 
 
-# ============================================================
-# REGISTER
-# ============================================================
-
 @app.get(
     "/register",
     response_class=HTMLResponse,
 )
 def register_page(request: Request):
-
     return templates.TemplateResponse(
         request=request,
         name="register.html",
@@ -298,11 +324,9 @@ def register(
     username: str = Form(...),
     password: str = Form(...),
 ):
-
     username = username.strip()
 
     if len(username) < 3:
-
         return templates.TemplateResponse(
             request=request,
             name="register.html",
@@ -314,7 +338,6 @@ def register(
         )
 
     if len(password) < 8:
-
         return templates.TemplateResponse(
             request=request,
             name="register.html",
@@ -326,7 +349,6 @@ def register(
         )
 
     if get_user_by_username(username):
-
         return templates.TemplateResponse(
             request=request,
             name="register.html",
@@ -338,14 +360,12 @@ def register(
         )
 
     try:
-
         user_id = create_user(
             username,
             hash_password(password),
         )
 
     except Exception:
-
         logger.exception(
             "Gagal membuat akun."
         )
@@ -377,16 +397,11 @@ def register(
     return response
 
 
-# ============================================================
-# LOGIN
-# ============================================================
-
 @app.get(
     "/login",
     response_class=HTMLResponse,
 )
 def login_page(request: Request):
-
     return templates.TemplateResponse(
         request=request,
         name="login.html",
@@ -402,7 +417,6 @@ def login(
     username: str = Form(...),
     password: str = Form(...),
 ):
-
     user = get_user_by_username(
         username.strip()
     )
@@ -414,7 +428,6 @@ def login(
             user["password_hash"],
         )
     ):
-
         return templates.TemplateResponse(
             request=request,
             name="login.html",
@@ -444,13 +457,8 @@ def login(
     return response
 
 
-# ============================================================
-# LOGOUT
-# ============================================================
-
 @app.post("/logout")
 def logout():
-
     response = RedirectResponse(
         "/login",
         status_code=303,
@@ -463,10 +471,6 @@ def logout():
     return response
 
 
-# ============================================================
-# ADD WEBHOOK
-# ============================================================
-
 @app.post("/webhooks")
 def create_webhook_route(
     request: Request,
@@ -475,24 +479,20 @@ def create_webhook_route(
     notify_jkt: str | None = Form(None),
     notify_akb: str | None = Form(None),
 ):
-
     user = current_user(request)
 
     if not user:
         return go_login()
 
-    # Buang spasi dan slash terakhir
     webhook_url = (
         webhook_url
         .strip()
         .rstrip("/")
     )
 
-    # Validasi format URL
     if not WEBHOOK_RE.match(
         webhook_url
     ):
-
         return RedirectResponse(
             "/?error="
             + quote(
@@ -514,7 +514,6 @@ def create_webhook_route(
         not use_jkt
         and not use_akb
     ):
-
         return RedirectResponse(
             "/?error="
             + quote(
@@ -525,21 +524,9 @@ def create_webhook_route(
         )
 
     try:
-
-        # ==================================================
-        # TEST / ACTIVATION
-        #
-        # Pesan activation sekaligus menjadi validasi
-        # bahwa webhook benar-benar bisa menerima pesan.
-        # ==================================================
-
         send_activation_message(
             webhook_url
         )
-
-        # ==================================================
-        # SIMPAN SETELAH DISCORD BERHASIL
-        # ==================================================
 
         add_webhook(
             user["id"],
@@ -570,13 +557,10 @@ def create_webhook_route(
         )
 
     except Exception as exc:
-
         logger.exception(
             "Gagal menambahkan webhook"
         )
 
-        # Batasi panjang error agar dashboard
-        # tidak berantakan.
         error_message = str(exc)
 
         if len(error_message) > 350:
@@ -592,10 +576,6 @@ def create_webhook_route(
         )
 
 
-# ============================================================
-# TEST WEBHOOK
-# ============================================================
-
 @app.post(
     "/webhooks/{webhook_id}/test"
 )
@@ -603,7 +583,6 @@ def test_webhook_route(
     webhook_id: int,
     request: Request,
 ):
-
     user = current_user(request)
 
     if not user:
@@ -615,7 +594,6 @@ def test_webhook_route(
     )
 
     if not hook:
-
         return RedirectResponse(
             "/?error="
             + quote(
@@ -625,7 +603,6 @@ def test_webhook_route(
         )
 
     try:
-
         webhook_url = decrypt_webhook(
             hook["webhook_url_enc"]
         )
@@ -643,7 +620,6 @@ def test_webhook_route(
         )
 
     except Exception as exc:
-
         logger.exception(
             "Test webhook gagal"
         )
@@ -666,10 +642,6 @@ def test_webhook_route(
         )
 
 
-# ============================================================
-# ENABLE / DISABLE WEBHOOK
-# ============================================================
-
 @app.post(
     "/webhooks/{webhook_id}/toggle"
 )
@@ -677,7 +649,6 @@ def toggle_webhook_route(
     webhook_id: int,
     request: Request,
 ):
-
     user = current_user(request)
 
     if not user:
@@ -689,7 +660,6 @@ def toggle_webhook_route(
     )
 
     if not hook:
-
         return RedirectResponse(
             "/?error="
             + quote(
@@ -712,10 +682,6 @@ def toggle_webhook_route(
     )
 
 
-# ============================================================
-# DELETE WEBHOOK
-# ============================================================
-
 @app.post(
     "/webhooks/{webhook_id}/delete"
 )
@@ -723,7 +689,6 @@ def delete_webhook_route(
     webhook_id: int,
     request: Request,
 ):
-
     user = current_user(request)
 
     if not user:
@@ -735,7 +700,6 @@ def delete_webhook_route(
     )
 
     if not hook:
-
         return RedirectResponse(
             "/?error="
             + quote(

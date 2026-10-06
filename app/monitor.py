@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import requests
-from curl_cffi import requests as cffi_requests
 
 from .config import settings
 from .db import (
@@ -16,52 +15,41 @@ from .db import (
 )
 from .security import decrypt_webhook
 
+
 log = logging.getLogger("48group.monitor")
 
-EVENTS = [
-    {
-        "group": "JKT48",
-        "api_url": "https://jkt48.com/api/v1/exclusives/EX5B99/bonus?lang=id",
+EVENTS = {
+    "JKT48": {
         "buy_url": "https://jkt48.com/purchase/exclusive?code=EX5B99",
     },
-    {
-        "group": "AKB48",
-        "api_url": "https://jkt48.com/api/v1/exclusives/EXD1A1/bonus?lang=id",
+    "AKB48": {
         "buy_url": "https://jkt48.com/purchase/exclusive?code=EXD1A1",
     },
-]
+}
 
-EVENT_MAP = {event["group"]: event for event in EVENTS}
-GROUP_NAMES = [event["group"] for event in EVENTS]
+GROUP_NAMES = ["JKT48", "AKB48"]
 
 COLOR_GREEN = 0x2ECC71
-COLOR_RED = 0xE74C3C
 COLOR_BLUE = 0x3498DB
 COLOR_PURPLE = 0x9B59B6
 
-# Backoff when the origin refuses automated requests.
-# Repeated retries against a 403/429 usually make things worse.
-BACKOFF_403 = [300, 600, 1200, 1800, 3600]  # 5m, 10m, 20m, 30m, 60m
-BACKOFF_429 = [120, 300, 600, 1200, 1800]
-NETWORK_BACKOFF = [30, 60, 120, 300]
-
 STATE_LOCK = threading.Lock()
+
 RUNTIME_STATE = {
     "members": [],
     "last_check": None,
     "last_success": None,
     "last_error": None,
     "running": False,
+    "collector_last_seen": None,
     "groups": {
         group: {
             "status": "cached",
             "last_attempt": None,
             "last_success": None,
             "last_http": None,
-            "error": None,
-            "cooldown_until_epoch": 0,
+            "error": "Menunggu collector lokal.",
             "retry_in": 0,
-            "failures": 0,
         }
         for group in GROUP_NAMES
     },
@@ -76,11 +64,13 @@ def _iso_now():
     return _jakarta_now().isoformat()
 
 
-def _copy_group_meta(meta: dict) -> dict:
-    copied = dict(meta)
-    until = float(copied.get("cooldown_until_epoch") or 0)
-    copied["retry_in"] = max(0, int(until - time.time()))
-    return copied
+def _parse_iso(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 def snapshot():
@@ -91,15 +81,17 @@ def snapshot():
             "last_success": RUNTIME_STATE["last_success"],
             "last_error": RUNTIME_STATE["last_error"],
             "running": RUNTIME_STATE["running"],
+            "collector_last_seen": RUNTIME_STATE["collector_last_seen"],
             "groups": {
-                group: _copy_group_meta(meta)
+                group: dict(meta)
                 for group, meta in RUNTIME_STATE["groups"].items()
             },
         }
 
 
-def parse_api_data(response_json, group_name: str, buy_url: str):
+def parse_api_data(response_json, group_name: str):
     parsed_items = []
+
     if not isinstance(response_json, dict):
         return parsed_items
 
@@ -107,12 +99,15 @@ def parse_api_data(response_json, group_name: str, buy_url: str):
     if not isinstance(sessions, list):
         return parsed_items
 
+    buy_url = EVENTS[group_name]["buy_url"]
+
     for session_obj in sessions:
         if not isinstance(session_obj, dict):
             continue
 
         session_name = session_obj.get("label", "-")
         session_members = session_obj.get("session_members", [])
+
         if not isinstance(session_members, list):
             continue
 
@@ -129,6 +124,7 @@ def parse_api_data(response_json, group_name: str, buy_url: str):
                 stock = 0
 
             uid = f"{group_name}_{member_name}_{session_name}_{track}"
+
             parsed_items.append(
                 {
                     "id": uid,
@@ -166,6 +162,7 @@ def discord_post(webhook_url: str, payload: dict):
         raise RuntimeError(
             f"Discord HTTP {response.status_code}: {response.text[:300]}"
         )
+
     return response
 
 
@@ -184,6 +181,7 @@ def send_embed(
         "footer": {"text": "48Group 2-Shot Monitor • Automatic System"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
     if fields:
         embed["fields"] = fields
 
@@ -191,6 +189,7 @@ def send_embed(
         "embeds": [embed],
         "allowed_mentions": {"parse": ["everyone"]},
     }
+
     if content:
         payload["content"] = content
 
@@ -203,7 +202,7 @@ def send_activation_message(webhook_url: str):
         "✅ 48GROUP MONITOR ACTIVATED",
         (
             "Webhook berhasil terhubung.\n\n"
-            "• **Restock alert:** realtime saat API dapat dipantau\n"
+            "• **Restock alert:** realtime melalui local collector\n"
             "• **Daily report:** 08:00 / 12:00 / 20:00 WIB\n"
             "• **Monitoring:** mengikuti pilihan grup di dashboard\n\n"
             "Sistem monitoring sekarang aktif."
@@ -223,6 +222,7 @@ def send_test_message(webhook_url: str):
 
 def broadcast_restock(item: dict, old_stock: int):
     hooks = list_enabled_webhooks(item["group"])
+
     if not hooks:
         log.info(
             "Restock %s %s terdeteksi, tetapi tidak ada webhook aktif.",
@@ -243,11 +243,13 @@ def broadcast_restock(item: dict, old_stock: int):
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
+
             content = (
                 "@everyone 🚨 **RESTOCK TERDETEKSI!**"
                 if hook["mention_everyone"]
                 else "🚨 **RESTOCK TERDETEKSI!**"
             )
+
             send_embed(
                 webhook_url,
                 "🚨 2-SHOT RESTOCK ALERT!",
@@ -255,7 +257,9 @@ def broadcast_restock(item: dict, old_stock: int):
                 COLOR_BLUE,
                 content=content,
             )
+
             log.info("Restock dikirim ke webhook id=%s", hook["id"])
+
         except Exception:
             log.exception("Gagal mengirim restock webhook id=%s", hook["id"])
 
@@ -266,6 +270,7 @@ def available_group_text(members, group_name, limit=18):
         for member in members
         if member["group"] == group_name and member["stock"] > 0
     ]
+
     if not available:
         return "❌ Seluruh slot sedang sold out."
 
@@ -273,23 +278,28 @@ def available_group_text(members, group_name, limit=18):
         f"• **{m['name']}** — `{m['session']}` | `{m['track']}` → **{m['stock']}**"
         for m in available[:limit]
     ]
+
     if len(available) > limit:
         lines.append(f"…dan {len(available) - limit} slot tersedia lainnya.")
+
     return "\n".join(lines)[:1000]
 
 
 def send_scheduled_report(members, report_hour, group_meta=None):
     hooks = list_enabled_webhooks()
+
     if not hooks:
         return
 
     group_meta = group_meta or {}
+
     jkt_text = available_group_text(members, "JKT48")
     akb_text = available_group_text(members, "AKB48")
 
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
+
             fields = []
 
             if hook["notify_jkt"]:
@@ -320,10 +330,11 @@ def send_scheduled_report(members, report_hour, group_meta=None):
             send_embed(
                 webhook_url,
                 f"📊 REKAP 2-SHOT • {report_hour:02d}:00 WIB",
-                "Status ketersediaan terbaru yang dimiliki monitor 48Group.",
+                "Status ketersediaan terbaru dari local collector.",
                 COLOR_PURPLE,
                 fields=fields,
             )
+
         except Exception:
             log.exception("Scheduled report gagal webhook id=%s", hook["id"])
 
@@ -333,17 +344,6 @@ class MonitorService:
         self.stop_event = threading.Event()
         self.thread = None
         self.last_schedule_key = None
-
-        # One persistent browser-like HTTP session per group.
-        # This preserves normal cookies/connections between requests without
-        # trying to automate or bypass a Cloudflare challenge.
-        self.sessions = {
-            group: cffi_requests.Session(impersonate="chrome")
-            for group in GROUP_NAMES
-        }
-
-        self.failure_counts = {group: 0 for group in GROUP_NAMES}
-        self.next_request_time = {group: 0.0 for group in GROUP_NAMES}
 
         try:
             self.prev_state = load_event_state()
@@ -355,16 +355,17 @@ class MonitorService:
 
     def restore_cached_data(self):
         restored = []
-        last_success_by_group = {group: None for group in GROUP_NAMES}
+        latest_by_group = {group: None for group in GROUP_NAMES}
 
         for uid, row in self.prev_state.items():
             try:
                 group = row["group_name"]
-                event = EVENT_MAP.get(group)
-                if not event:
+
+                if group not in EVENTS:
                     continue
 
                 stock = int(row["stock"])
+
                 restored.append(
                     {
                         "id": uid,
@@ -374,16 +375,18 @@ class MonitorService:
                         "track": row["track_name"],
                         "quota": stock > 0,
                         "stock": stock,
-                        "buy_url": event["buy_url"],
+                        "buy_url": EVENTS[group]["buy_url"],
                     }
                 )
 
                 updated_at = row.get("updated_at")
+
                 if updated_at and (
-                    last_success_by_group[group] is None
-                    or updated_at > last_success_by_group[group]
+                    latest_by_group[group] is None
+                    or updated_at > latest_by_group[group]
                 ):
-                    last_success_by_group[group] = updated_at
+                    latest_by_group[group] = updated_at
+
             except Exception:
                 continue
 
@@ -392,14 +395,17 @@ class MonitorService:
                 RUNTIME_STATE["members"] = restored
 
             latest = None
+
             for group in GROUP_NAMES:
-                cached_at = last_success_by_group[group]
                 meta = RUNTIME_STATE["groups"][group]
                 meta["status"] = "cached"
-                meta["last_success"] = cached_at
-                meta["error"] = "Menampilkan data terakhir dari database."
-                if cached_at and (latest is None or cached_at > latest):
-                    latest = cached_at
+                meta["last_success"] = latest_by_group[group]
+                meta["error"] = "Menunggu snapshot baru dari local collector."
+
+                if latest_by_group[group] and (
+                    latest is None or latest_by_group[group] > latest
+                ):
+                    latest = latest_by_group[group]
 
             RUNTIME_STATE["last_success"] = latest
 
@@ -409,297 +415,297 @@ class MonitorService:
     def start(self):
         if self.thread and self.thread.is_alive():
             return
+
         self.stop_event.clear()
+
         self.thread = threading.Thread(
             target=self.run,
             daemon=True,
             name="48group-monitor",
         )
+
         self.thread.start()
 
     def stop(self):
         self.stop_event.set()
+
         if self.thread:
             self.thread.join(timeout=10)
 
-    def _backoff_seconds(self, status_code, failure_count, retry_after=None):
-        idx = max(0, failure_count - 1)
+    def ingest_snapshot(self, payload: dict):
+        if not isinstance(payload, dict):
+            raise ValueError("Payload collector harus berupa JSON object.")
 
-        if status_code == 403:
-            return BACKOFF_403[min(idx, len(BACKOFF_403) - 1)]
-        if status_code == 429:
-            if retry_after:
-                return max(60, int(retry_after))
-            return BACKOFF_429[min(idx, len(BACKOFF_429) - 1)]
-        return NETWORK_BACKOFF[min(idx, len(NETWORK_BACKOFF) - 1)]
+        groups_payload = payload.get("groups")
 
-    def _fetch_group(self, event):
-        group = event["group"]
-        now_epoch = time.time()
+        if not isinstance(groups_payload, dict):
+            raise ValueError("Payload harus memiliki object 'groups'.")
 
-        if now_epoch < self.next_request_time[group]:
-            remaining = int(self.next_request_time[group] - now_epoch)
-            return {
-                "kind": "cooldown",
-                "group": group,
-                "retry_in": remaining,
-                "status_code": RUNTIME_STATE["groups"][group].get("last_http"),
-            }
-
-        attempt_iso = _iso_now()
-        with STATE_LOCK:
-            RUNTIME_STATE["groups"][group]["last_attempt"] = attempt_iso
-
-        try:
-            response = self.sessions[group].get(
-                event["api_url"],
-                timeout=20,
-            )
-            status_code = int(response.status_code)
-            log.info("%s API HTTP %s", group, status_code)
-
-            if status_code == 200:
-                try:
-                    data = response.json()
-                except Exception as exc:
-                    raise RuntimeError(f"HTTP 200 tetapi JSON invalid: {exc}") from exc
-
-                self.failure_counts[group] = 0
-                self.next_request_time[group] = 0
-                return {
-                    "kind": "success",
-                    "group": group,
-                    "data": data,
-                    "status_code": 200,
-                    "attempt_iso": attempt_iso,
-                }
-
-            self.failure_counts[group] += 1
-            retry_after = None
-            if status_code == 429:
-                try:
-                    retry_after = response.headers.get("Retry-After")
-                    if retry_after is not None:
-                        retry_after = int(float(retry_after))
-                except Exception:
-                    retry_after = None
-
-            cooldown = self._backoff_seconds(
-                status_code,
-                self.failure_counts[group],
-                retry_after,
-            )
-            self.next_request_time[group] = now_epoch + cooldown
-
-            if status_code == 403:
-                error = "HTTP 403 - endpoint menolak request otomatis"
-            elif status_code == 429:
-                error = "HTTP 429 - rate limit"
-            else:
-                error = f"HTTP {status_code}"
-
-            return {
-                "kind": "http_error",
-                "group": group,
-                "status_code": status_code,
-                "error": error,
-                "cooldown": cooldown,
-                "attempt_iso": attempt_iso,
-            }
-
-        except Exception as exc:
-            self.failure_counts[group] += 1
-            cooldown = self._backoff_seconds(
-                None,
-                self.failure_counts[group],
-            )
-            self.next_request_time[group] = now_epoch + cooldown
-            return {
-                "kind": "network_error",
-                "group": group,
-                "status_code": None,
-                "error": f"{type(exc).__name__}: {exc}",
-                "cooldown": cooldown,
-                "attempt_iso": attempt_iso,
-            }
-
-    def _set_group_success(self, group, success_iso):
-        with STATE_LOCK:
-            meta = RUNTIME_STATE["groups"][group]
-            meta["status"] = "live"
-            meta["last_success"] = success_iso
-            meta["last_http"] = 200
-            meta["error"] = None
-            meta["cooldown_until_epoch"] = 0
-            meta["retry_in"] = 0
-            meta["failures"] = 0
-
-    def _set_group_failure(self, group, result, has_cached_data):
-        now_epoch = time.time()
-        cooldown = int(result.get("cooldown") or result.get("retry_in") or 0)
-        until = self.next_request_time[group] if cooldown else 0
-        kind = result["kind"]
-
-        if kind == "cooldown":
-            status = "cooldown" if has_cached_data else "error"
-            error = RUNTIME_STATE["groups"][group].get("error") or "Menunggu retry."
-        elif result.get("status_code") in (403, 429):
-            status = "cooldown" if has_cached_data else "error"
-            error = result.get("error")
-        else:
-            status = "cached" if has_cached_data else "error"
-            error = result.get("error")
+        received_iso = _iso_now()
+        collector_time = payload.get("collector_time") or received_iso
 
         with STATE_LOCK:
-            meta = RUNTIME_STATE["groups"][group]
-            meta["status"] = status
-            if result.get("status_code") is not None:
-                meta["last_http"] = result.get("status_code")
-            meta["error"] = error
-            meta["cooldown_until_epoch"] = until
-            meta["retry_in"] = max(0, int(until - now_epoch)) if until else 0
-            meta["failures"] = self.failure_counts[group]
-
-    def run(self):
-        with STATE_LOCK:
-            RUNTIME_STATE["running"] = True
-
-        log.info("Monitor aktif. Base interval=%ss", settings.check_interval)
-
-        try:
-            while not self.stop_event.is_set():
-                try:
-                    self.poll_once()
-                    self.maybe_send_scheduled_report()
-                except Exception as exc:
-                    log.exception("Monitor loop error")
-                    with STATE_LOCK:
-                        RUNTIME_STATE["last_error"] = f"{type(exc).__name__}: {exc}"
-
-                self.stop_event.wait(settings.check_interval)
-        finally:
-            with STATE_LOCK:
-                RUNTIME_STATE["running"] = False
-
-    def poll_once(self):
-        check_iso = _iso_now()
-
-        with STATE_LOCK:
-            RUNTIME_STATE["last_check"] = check_iso
             previous_runtime = list(RUNTIME_STATE["members"])
+            RUNTIME_STATE["last_check"] = received_iso
+            RUNTIME_STATE["collector_last_seen"] = received_iso
 
         dashboard_by_group = {
-            group: [m for m in previous_runtime if m["group"] == group]
+            group: [
+                member
+                for member in previous_runtime
+                if member["group"] == group
+            ]
             for group in GROUP_NAMES
         }
 
-        loop_errors = []
-        successful_groups = []
+        result_summary = {}
+        restock_count = 0
 
-        for index, event in enumerate(EVENTS):
-            group = event["group"]
-            has_cached_data = bool(dashboard_by_group[group])
-            result = self._fetch_group(event)
+        for group in GROUP_NAMES:
+            report = groups_payload.get(group)
 
-            if result["kind"] == "success":
-                parsed = parse_api_data(result["data"], group, event["buy_url"])
-                dashboard_by_group[group] = parsed
-                successful_groups.append(group)
-                success_iso = result.get("attempt_iso") or check_iso
-                self._set_group_success(group, success_iso)
+            if not isinstance(report, dict):
+                continue
 
-                for item in parsed:
-                    uid = item["id"]
-                    previous = self.prev_state.get(uid)
-                    if previous is not None:
-                        try:
-                            old_stock = int(previous.get("stock", 0))
-                        except Exception:
-                            old_stock = 0
+            checked_at = report.get("checked_at") or collector_time
+            http_status = report.get("http_status")
+            ok = bool(report.get("ok"))
 
-                        if old_stock <= 0 and item["stock"] > 0:
-                            log.warning(
-                                "RESTOCK %s | %s | %s | %s | %s -> %s",
-                                item["group"],
-                                item["name"],
-                                item["session"],
-                                item["track"],
-                                old_stock,
-                                item["stock"],
-                            )
-                            add_restock_log(item, old_stock, item["stock"])
-                            broadcast_restock(item, old_stock)
+            with STATE_LOCK:
+                meta = RUNTIME_STATE["groups"][group]
+                meta["last_attempt"] = checked_at
+                meta["last_http"] = http_status
 
-                    upsert_event_state(item)
-                    self.prev_state[uid] = {
-                        "uid": uid,
-                        "group_name": item["group"],
-                        "member_name": item["name"],
-                        "session_name": item["session"],
-                        "track_name": item["track"],
-                        "stock": item["stock"],
-                        "updated_at": success_iso,
-                    }
+            if not ok:
+                error = str(report.get("error") or "Local collector gagal mengambil API.")
 
-                log.info("%s live: %s slot", group, len(parsed))
-            else:
-                self._set_group_failure(group, result, has_cached_data)
-                if result["kind"] != "cooldown":
-                    loop_errors.append(f"{group}: {result.get('error', 'fetch gagal')}")
-                    log.warning(
-                        "%s gagal; status=%s; retry=%ss",
-                        group,
-                        result.get("status_code"),
-                        result.get("cooldown", 0),
-                    )
+                with STATE_LOCK:
+                    meta = RUNTIME_STATE["groups"][group]
+                    meta["status"] = "cached" if dashboard_by_group[group] else "error"
+                    meta["error"] = error
 
-            # Do not burst both endpoints at the exact same instant.
-            if index < len(EVENTS) - 1 and not self.stop_event.is_set():
-                self.stop_event.wait(1.5)
+                result_summary[group] = {
+                    "ok": False,
+                    "error": error,
+                }
+
+                continue
+
+            raw_data = report.get("data")
+
+            parsed = parse_api_data(
+                raw_data,
+                group,
+            )
+
+            # Jika collector menyatakan sukses tetapi JSON tidak menghasilkan
+            # data sama sekali, jangan hapus cache lama secara otomatis.
+            if not parsed:
+                error = "Collector mendapat response, tetapi tidak ada slot yang dapat diparse."
+
+                with STATE_LOCK:
+                    meta = RUNTIME_STATE["groups"][group]
+                    meta["status"] = "cached" if dashboard_by_group[group] else "error"
+                    meta["error"] = error
+
+                result_summary[group] = {
+                    "ok": False,
+                    "error": error,
+                }
+
+                continue
+
+            for item in parsed:
+                uid = item["id"]
+                previous = self.prev_state.get(uid)
+
+                if previous is not None:
+                    try:
+                        old_stock = int(previous.get("stock", 0))
+                    except Exception:
+                        old_stock = 0
+
+                    if old_stock <= 0 and item["stock"] > 0:
+                        log.warning(
+                            "RESTOCK %s | %s | %s | %s | %s -> %s",
+                            item["group"],
+                            item["name"],
+                            item["session"],
+                            item["track"],
+                            old_stock,
+                            item["stock"],
+                        )
+
+                        add_restock_log(
+                            item,
+                            old_stock,
+                            item["stock"],
+                        )
+
+                        broadcast_restock(
+                            item,
+                            old_stock,
+                        )
+
+                        restock_count += 1
+
+                upsert_event_state(item)
+
+                self.prev_state[uid] = {
+                    "uid": uid,
+                    "group_name": item["group"],
+                    "member_name": item["name"],
+                    "session_name": item["session"],
+                    "track_name": item["track"],
+                    "stock": item["stock"],
+                    "updated_at": checked_at,
+                }
+
+            dashboard_by_group[group] = parsed
+
+            with STATE_LOCK:
+                meta = RUNTIME_STATE["groups"][group]
+                meta["status"] = "live"
+                meta["last_success"] = checked_at
+                meta["last_http"] = http_status or 200
+                meta["error"] = None
+                meta["retry_in"] = 0
+
+            result_summary[group] = {
+                "ok": True,
+                "slots": len(parsed),
+            }
 
         combined = []
+
         for group in GROUP_NAMES:
             combined.extend(dashboard_by_group[group])
 
         with STATE_LOCK:
             RUNTIME_STATE["members"] = combined
 
-            last_successes = [
+            successes = [
                 meta.get("last_success")
                 for meta in RUNTIME_STATE["groups"].values()
                 if meta.get("last_success")
             ]
-            RUNTIME_STATE["last_success"] = max(last_successes) if last_successes else None
 
-            if loop_errors:
-                RUNTIME_STATE["last_error"] = " | ".join(loop_errors)
-            else:
-                # If a group is still in cooldown, show a short summary rather
-                # than dumping the Cloudflare HTML challenge into the UI.
-                waiting = []
-                for group, meta in RUNTIME_STATE["groups"].items():
-                    if meta.get("status") in ("cooldown", "error") and meta.get("error"):
-                        waiting.append(f"{group}: {meta['error']}")
-                RUNTIME_STATE["last_error"] = " | ".join(waiting) if waiting else None
+            RUNTIME_STATE["last_success"] = (
+                max(successes)
+                if successes
+                else None
+            )
+
+            errors = []
+
+            for group, meta in RUNTIME_STATE["groups"].items():
+                if meta.get("status") != "live" and meta.get("error"):
+                    errors.append(
+                        f"{group}: {meta['error']}"
+                    )
+
+            RUNTIME_STATE["last_error"] = (
+                " | ".join(errors)
+                if errors
+                else None
+            )
 
         log.info(
-            "Polling selesai. live=%s dashboard=%s slot",
-            successful_groups,
-            len(combined),
+            "Snapshot collector diterima. result=%s restocks=%s",
+            result_summary,
+            restock_count,
         )
+
+        return {
+            "ok": True,
+            "received_at": received_iso,
+            "groups": result_summary,
+            "restocks": restock_count,
+        }
+
+    def _mark_stale_if_needed(self):
+        state = snapshot()
+        last_seen = _parse_iso(state.get("collector_last_seen"))
+
+        if last_seen is None:
+            return
+
+        now = datetime.now(last_seen.tzinfo or timezone.utc)
+
+        age = (
+            now - last_seen
+        ).total_seconds()
+
+        if age <= settings.collector_stale_after:
+            return
+
+        with STATE_LOCK:
+            for group in GROUP_NAMES:
+                meta = RUNTIME_STATE["groups"][group]
+
+                if meta["status"] == "live":
+                    meta["status"] = "cached"
+                    meta["error"] = (
+                        f"Local collector belum mengirim update selama "
+                        f"{int(age)} detik."
+                    )
+
+            RUNTIME_STATE["last_error"] = (
+                f"Local collector tidak mengirim snapshot terbaru "
+                f"selama {int(age)} detik."
+            )
+
+    def run(self):
+        with STATE_LOCK:
+            RUNTIME_STATE["running"] = True
+
+        log.info(
+            "Monitor Deplexo aktif dalam mode LOCAL COLLECTOR."
+        )
+
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    self._mark_stale_if_needed()
+                    self.maybe_send_scheduled_report()
+
+                except Exception as exc:
+                    log.exception("Monitor loop error")
+
+                    with STATE_LOCK:
+                        RUNTIME_STATE["last_error"] = (
+                            f"{type(exc).__name__}: {exc}"
+                        )
+
+                self.stop_event.wait(5)
+
+        finally:
+            with STATE_LOCK:
+                RUNTIME_STATE["running"] = False
 
     def maybe_send_scheduled_report(self):
         now = _jakarta_now()
-        if now.hour not in (8, 12, 20):
+
+        if now.hour not in (
+            8,
+            12,
+            20,
+        ):
             return
+
         if now.minute >= 5:
             return
 
-        schedule_key = f"{now.date().isoformat()}-{now.hour}"
+        schedule_key = (
+            f"{now.date().isoformat()}-"
+            f"{now.hour}"
+        )
+
         if self.last_schedule_key == schedule_key:
             return
 
         state = snapshot()
+
         if not state["members"]:
             return
 
@@ -708,5 +714,10 @@ class MonitorService:
             now.hour,
             group_meta=state["groups"],
         )
+
         self.last_schedule_key = schedule_key
-        log.info("Scheduled report %02d:00 WIB terkirim.", now.hour)
+
+        log.info(
+            "Scheduled report %02d:00 WIB terkirim.",
+            now.hour,
+        )
