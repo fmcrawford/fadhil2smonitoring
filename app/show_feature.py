@@ -114,6 +114,20 @@ def init_show_db():
 
 def _replace_show_window(window_start, window_end, shows):
     with _connect() as conn:
+        previous_rows = conn.execute(
+            """
+            SELECT reference_code, members_json
+            FROM show_schedule
+            WHERE show_date BETWEEN ? AND ?
+            """,
+            (window_start, window_end),
+        ).fetchall()
+
+        previous_members = {
+            row["reference_code"]: row["members_json"]
+            for row in previous_rows
+        }
+
         conn.execute(
             """
             DELETE FROM show_schedule
@@ -123,6 +137,20 @@ def _replace_show_window(window_start, window_end, shows):
         )
 
         for show in shows:
+            reference_code = show["reference_code"]
+            incoming_members = show.get("members")
+
+            if incoming_members is None:
+                members_json = previous_members.get(
+                    reference_code,
+                    "[]",
+                )
+            else:
+                members_json = json.dumps(
+                    incoming_members,
+                    ensure_ascii=False,
+                )
+
             conn.execute(
                 """
                 INSERT INTO show_schedule(
@@ -149,17 +177,14 @@ def _replace_show_window(window_start, window_end, shows):
                     updated_at=excluded.updated_at
                 """,
                 (
-                    show["reference_code"],
+                    reference_code,
                     show.get("schedule_id"),
                     show.get("title") or "Theater Show",
                     show["date"],
                     show.get("start_time"),
                     show.get("end_time"),
                     show.get("member_type"),
-                    json.dumps(
-                        show.get("members") or [],
-                        ensure_ascii=False,
-                    ),
+                    members_json,
                     show.get("show_url"),
                     _utcnow_iso(),
                 ),
@@ -414,16 +439,30 @@ def _decode_members(show):
 
 
 def _matched_oshis(show, target_names):
-    targets = {
-        str(name).casefold(): str(name)
-        for name in target_names
+    # ANY/OR semantics:
+    # satu oshi saja tampil sudah match.
+    # Kalau beberapa oshi tampil di show yang sama, semua ikut ditampilkan.
+    lineup = {
+        str(name).casefold()
+        for name in _decode_members(show)
     }
 
-    return [
-        targets[name.casefold()]
-        for name in _decode_members(show)
-        if name.casefold() in targets
-    ]
+    matched = []
+    seen = set()
+
+    for target in target_names:
+        target_text = str(target).strip()
+        target_key = target_text.casefold()
+
+        if (
+            target_key
+            and target_key in lineup
+            and target_key not in seen
+        ):
+            matched.append(target_text)
+            seen.add(target_key)
+
+    return matched
 
 
 def _show_start_datetime(show):

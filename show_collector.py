@@ -11,10 +11,16 @@ from curl_cffi import requests as cffi_requests
 SHOW_INGEST_URL = os.getenv("SHOW_INGEST_URL", "").strip()
 COLLECTOR_SECRET = os.getenv("COLLECTOR_SECRET", "").strip()
 SHOW_REFRESH_INTERVAL = int(
-    os.getenv("SHOW_REFRESH_INTERVAL", "900")
+    os.getenv("SHOW_REFRESH_INTERVAL", "3600")
 )
 SHOW_403_BACKOFF = int(
     os.getenv("SHOW_403_BACKOFF", "1800")
+)
+SHOW_DETAIL_TTL = int(
+    os.getenv("SHOW_DETAIL_TTL", "21600")
+)
+SHOW_NEAR_DETAIL_TTL = int(
+    os.getenv("SHOW_NEAR_DETAIL_TTL", "3600")
 )
 SHOW_DAYS_AHEAD = int(
     os.getenv("SHOW_DAYS_AHEAD", "14")
@@ -31,6 +37,10 @@ if not COLLECTOR_SECRET:
 
 SESSION = None
 SESSION_WARMED = False
+
+# Cache detail lineup berdasarkan reference_code.
+# Schedule tetap dicek berkala, tetapi detail show tidak diambil berulang kali.
+DETAIL_CACHE = {}
 
 HEADERS = {
     "User-Agent": (
@@ -231,31 +241,61 @@ def fetch_show_schedule():
                 continue
 
             detail_data = {}
+            members = None
 
-            detail_url = (
-                "https://jkt48.com/api/v1/"
-                "theater-shows/"
-                f"{ref_code}?lang=id"
+            cached = DETAIL_CACHE.get(ref_code)
+            cache_age = (
+                time.time() - cached["fetched_at"]
+                if cached
+                else None
             )
 
-            detail_res = SESSION.get(
-                detail_url,
-                headers=HEADERS,
-                timeout=20,
+            # Default: detail lineup boleh dipakai 6 jam.
+            # Jika show tinggal <= 6 jam, refresh maksimal tiap 1 jam.
+            detail_ttl = SHOW_DETAIL_TTL
+            start_time_text = str(
+                show.get("start_time") or ""
+            )[:5]
+
+            if start_time_text:
+                try:
+                    start_dt = datetime.strptime(
+                        f"{show_date_str} {start_time_text}",
+                        "%Y-%m-%d %H:%M",
+                    ).replace(
+                        tzinfo=ZoneInfo(TIMEZONE)
+                    )
+                    seconds_to_show = (
+                        start_dt - now
+                    ).total_seconds()
+                    if 0 <= seconds_to_show <= 21600:
+                        detail_ttl = min(
+                            SHOW_DETAIL_TTL,
+                            SHOW_NEAR_DETAIL_TTL,
+                        )
+                except Exception:
+                    pass
+
+            use_cache = (
+                cached is not None
+                and cache_age is not None
+                and cache_age < detail_ttl
             )
 
-            print(
-                f"[{checked_at}] "
-                f"SHOW {ref_code} "
-                f"HTTP {detail_res.status_code}"
-            )
-
-            if int(detail_res.status_code) == 403:
-                # Detail show tidak boleh menjatuhkan seluruh snapshot.
-                # Retry sekali dengan session baru, lalu lanjut ke show berikutnya.
-                new_session()
-                time.sleep(3)
-                warm_up_session()
+            if use_cache:
+                detail_data = cached["data"]
+                members = list(cached["members"])
+                print(
+                    f"[{checked_at}] "
+                    f"SHOW {ref_code} CACHE "
+                    f"age={int(cache_age)}s"
+                )
+            else:
+                detail_url = (
+                    "https://jkt48.com/api/v1/"
+                    "theater-shows/"
+                    f"{ref_code}?lang=id"
+                )
 
                 detail_res = SESSION.get(
                     detail_url,
@@ -265,37 +305,63 @@ def fetch_show_schedule():
 
                 print(
                     f"[{checked_at}] "
-                    f"SHOW RETRY {ref_code} "
+                    f"SHOW {ref_code} "
                     f"HTTP {detail_res.status_code}"
                 )
 
-            if int(detail_res.status_code) == 200:
-                try:
-                    detail_json = detail_res.json()
+                if int(detail_res.status_code) == 403:
+                    new_session()
+                    time.sleep(3)
+                    warm_up_session()
+                    detail_res = SESSION.get(
+                        detail_url,
+                        headers=HEADERS,
+                        timeout=20,
+                    )
+                    print(
+                        f"[{checked_at}] "
+                        f"SHOW RETRY {ref_code} "
+                        f"HTTP {detail_res.status_code}"
+                    )
 
-                    if detail_json.get("status"):
-                        detail_data = (
-                            detail_json.get("data", {})
-                        )
-                except Exception:
-                    detail_data = {}
+                if int(detail_res.status_code) == 200:
+                    try:
+                        detail_json = detail_res.json()
+                        if detail_json.get("status"):
+                            detail_data = detail_json.get(
+                                "data", {}
+                            )
+                    except Exception:
+                        detail_data = {}
 
-            members = []
+                    members = []
+                    for member in detail_data.get(
+                        "jkt48_member", []
+                    ):
+                        name = str(
+                            member.get("name") or ""
+                        ).strip()
+                        if name and name not in members:
+                            members.append(name)
 
-            for member in detail_data.get(
-                "jkt48_member",
-                [],
-            ):
-                name = str(
-                    member.get("name")
-                    or ""
-                ).strip()
+                    DETAIL_CACHE[ref_code] = {
+                        "fetched_at": time.time(),
+                        "data": detail_data,
+                        "members": list(members),
+                    }
+                elif cached:
+                    detail_data = cached["data"]
+                    members = list(cached["members"])
+                    print(
+                        f"[{checked_at}] "
+                        f"SHOW {ref_code} pakai stale detail cache"
+                    )
+                else:
+                    # None berarti backend harus mempertahankan lineup lama
+                    # dan tidak menggantinya dengan list kosong.
+                    members = None
 
-                if (
-                    name
-                    and name not in members
-                ):
-                    members.append(name)
+                time.sleep(1.0)
 
             schedule_id = show.get(
                 "schedule_id"
@@ -333,7 +399,10 @@ def fetch_show_schedule():
                 "show_url": show_url,
             }
 
-            time.sleep(1.0)
+    active_refs = set(shows_by_ref)
+    for cached_ref in list(DETAIL_CACHE):
+        if cached_ref not in active_refs:
+            DETAIL_CACHE.pop(cached_ref, None)
 
     items = sorted(
         shows_by_ref.values(),
@@ -418,6 +487,12 @@ def main():
     )
     print(
         f"Window: {SHOW_DAYS_AHEAD} hari"
+    )
+    print(
+        f"Detail TTL: {SHOW_DETAIL_TTL}s"
+    )
+    print(
+        f"Near-show detail TTL: {SHOW_NEAR_DETAIL_TTL}s"
     )
     print(
         f"403 backoff: {SHOW_403_BACKOFF}s"
