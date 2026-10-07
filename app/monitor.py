@@ -465,7 +465,8 @@ def broadcast_mng_cutoff(rows, week_key: str):
                     f"{eligible_text}\n\n"
                     "**Sudah maksimum 4 sesi:**\n"
                     f"{maxed_text}\n\n"
-                    "Sesi tambahan member qualified dipantau pada Senin 19:00 WIB."
+                    "Sesi tambahan member qualified dipantau pada Senin 19:00 WIB.\n\n"
+                    + purchase_link_text(MNG_GROUP, "BUKA HALAMAN JKT48 M&G")
                 ),
                 COLOR_ORANGE,
                 content=content,
@@ -512,6 +513,24 @@ def broadcast_mng_extra_session(member_name: str, new_sessions: list[str]):
             log.exception("Gagal mengirim M&G release webhook id=%s", hook["id"])
 
 
+def purchase_link_text(group_name: str, label=None):
+    url = EVENTS.get(group_name, {}).get("buy_url")
+    if not url:
+        return ""
+
+    if label is None:
+        if group_name == "JKT48":
+            label = "BELI JKT48 2-SHOT"
+        elif group_name == "AKB48":
+            label = "BELI AKB48 2-SHOT"
+        elif group_name == MNG_GROUP:
+            label = "BELI JKT48 M&G"
+        else:
+            label = "BUKA HALAMAN PEMBELIAN"
+
+    return f"👉 **[{label}]({url})**"
+
+
 def available_group_text(members, group_name, limit=18):
     available = [
         member
@@ -529,6 +548,10 @@ def available_group_text(members, group_name, limit=18):
 
     if len(available) > limit:
         lines.append(f"…dan {len(available) - limit} slot tersedia lainnya.")
+
+    link = purchase_link_text(group_name)
+    if link:
+        lines.extend(["", link])
 
     return "\n".join(lines)[:1000]
 
@@ -570,7 +593,8 @@ def available_mng_highlights_text(members):
     if not grouped:
         return (
             "Tidak ada member pantauan yang sedang tersedia. "
-            "Semua target highlight sedang sold out / belum tersedia."
+            "Semua target highlight sedang sold out / belum tersedia.\n\n"
+            + purchase_link_text(MNG_GROUP, "BUKA HALAMAN JKT48 M&G")
         )
 
     lines = []
@@ -590,6 +614,10 @@ def available_mng_highlights_text(members):
         remaining = len(row["slots"]) - 2
         if remaining > 0:
             lines.append(f"↳ +{remaining} slot tersedia lainnya")
+
+    link = purchase_link_text(MNG_GROUP, "BELI JKT48 M&G")
+    if link:
+        lines.extend(["", link])
 
     return "\n".join(lines)[:3800]
 
