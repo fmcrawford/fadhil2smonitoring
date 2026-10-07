@@ -114,6 +114,13 @@ def init_db():
                 "ADD COLUMN notify_mng INTEGER NOT NULL DEFAULT 1"
             )
 
+        # Show Oshi sengaja opt-in agar terpisah dari 2-Shot / M&G.
+        if "notify_show" not in webhook_columns:
+            conn.execute(
+                "ALTER TABLE webhooks "
+                "ADD COLUMN notify_show INTEGER NOT NULL DEFAULT 0"
+            )
+
 
 def utcnow_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -151,6 +158,7 @@ def add_webhook(
     notify_jkt,
     notify_akb,
     notify_mng,
+    notify_show,
     mention_everyone=True,
 ):
     with _connect() as conn:
@@ -158,8 +166,9 @@ def add_webhook(
             """
             INSERT INTO webhooks(
                 user_id,name,webhook_url_enc,enabled,
-                notify_jkt,notify_akb,notify_mng,mention_everyone,created_at
-            ) VALUES (?,?,?,1,?,?,?,?,?)
+                notify_jkt,notify_akb,notify_mng,notify_show,
+                mention_everyone,created_at
+            ) VALUES (?,?,?,1,?,?,?,?,?,?)
             """,
             (
                 user_id,
@@ -168,6 +177,7 @@ def add_webhook(
                 int(notify_jkt),
                 int(notify_akb),
                 int(notify_mng),
+                int(notify_show),
                 int(mention_everyone),
                 utcnow_iso(),
             ),
@@ -211,6 +221,18 @@ def toggle_webhook(webhook_id, user_id):
             """
             UPDATE webhooks
             SET enabled=CASE enabled WHEN 1 THEN 0 ELSE 1 END
+            WHERE id=? AND user_id=?
+            """,
+            (webhook_id, user_id),
+        )
+
+
+def toggle_webhook_show(webhook_id, user_id):
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE webhooks
+            SET notify_show=CASE notify_show WHEN 1 THEN 0 ELSE 1 END
             WHERE id=? AND user_id=?
             """,
             (webhook_id, user_id),

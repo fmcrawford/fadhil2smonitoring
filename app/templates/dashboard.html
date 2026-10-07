@@ -419,6 +419,7 @@
               <label><input type="checkbox" name="notify_jkt" checked> JKT48 2-Shot</label>
               <label><input type="checkbox" name="notify_akb" checked> AKB48 2-Shot</label>
               <label><input type="checkbox" name="notify_mng" checked> JKT48 M&G</label>
+              <label><input type="checkbox" name="notify_show"> 🎭 Show Oshi</label>
             </div>
             <button class="primary" type="submit">Test & Aktifkan</button>
           </form>
@@ -428,8 +429,9 @@
       <div class="a31-hooks">
         {% for h in webhooks %}
         <div class="a31-hook">
-          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48 2-Shot{% endif %}{% if h.notify_akb %} • AKB48 2-Shot{% endif %}{% if h.notify_mng %} • JKT48 M&G{% endif %}</small></div>
+          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48 2-Shot{% endif %}{% if h.notify_akb %} • AKB48 2-Shot{% endif %}{% if h.notify_mng %} • JKT48 M&G{% endif %}{% if h.notify_show %} • 🎭 Show Oshi{% endif %}</small></div>
           <div class="a31-hook-actions">
+            <form method="post" action="/webhooks/{{ h.id }}/show-toggle"><button class="ghost">Show {% if h.notify_show %}ON{% else %}OFF{% endif %}</button></form>
             <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>
             <form method="post" action="/webhooks/{{ h.id }}/toggle"><button class="ghost">{% if h.enabled %}Disable{% else %}Enable{% endif %}</button></form>
             <form method="post" action="/webhooks/{{ h.id }}/delete" onsubmit="return confirm('Hapus webhook ini?')"><button class="danger">Delete</button></form>

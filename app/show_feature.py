@@ -438,10 +438,21 @@ def _show_block(show, matched):
     if len(members) > 16:
         lineup += f", +{len(members) - 16} member"
 
-    show_url = show.get("show_url") or ""
+    reference_code = str(
+        show.get("reference_code")
+        or ""
+    ).strip()
+
+    purchase_url = (
+        "https://jkt48.com/purchase/schedule/show"
+        f"?code={quote(reference_code)}"
+        if reference_code
+        else ""
+    )
+
     detail_link = (
-        f"\n🔗 [Detail Show]({show_url})"
-        if show_url
+        f"\n🎟️ [Buka Pembelian Show]({purchase_url})"
+        if purchase_url
         else ""
     )
 
@@ -514,6 +525,7 @@ def _enabled_hooks(user_id):
         dict(row)
         for row in list_user_webhooks(user_id)
         if int(row["enabled"])
+        and int(row["notify_show"])
     ]
 
 
@@ -917,6 +929,18 @@ def shows_page(request: Request):
             for name in members
             if name.casefold() in target_map
         ]
+
+        reference_code = str(
+            show.get("reference_code")
+            or ""
+        ).strip()
+
+        show["purchase_url"] = (
+            "https://jkt48.com/purchase/schedule/show"
+            f"?code={quote(reference_code)}"
+            if reference_code
+            else ""
+        )
 
         shows.append(show)
 

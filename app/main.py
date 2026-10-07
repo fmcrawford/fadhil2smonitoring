@@ -26,6 +26,7 @@ from .db import (
     list_user_webhooks,
     recent_restocks,
     toggle_webhook,
+    toggle_webhook_show,
 )
 from .monitor import (
     MonitorService,
@@ -475,6 +476,7 @@ def create_webhook_route(
     notify_jkt: str | None = Form(None),
     notify_akb: str | None = Form(None),
     notify_mng: str | None = Form(None),
+    notify_show: str | None = Form(None),
 ):
     user = current_user(request)
     if not user:
@@ -490,10 +492,15 @@ def create_webhook_route(
     use_jkt = notify_jkt == "on"
     use_akb = notify_akb == "on"
     use_mng = notify_mng == "on"
+    use_show = notify_show == "on"
 
-    if not use_jkt and not use_akb and not use_mng:
+    if not use_jkt and not use_akb and not use_mng and not use_show:
         return RedirectResponse(
-            "/?error=" + quote("Pilih minimal satu notifikasi: JKT48 2-Shot, AKB48 2-Shot, atau JKT48 M&G."),
+            "/?error="
+            + quote(
+                "Pilih minimal satu notifikasi: "
+                "JKT48 2-Shot, AKB48 2-Shot, JKT48 M&G, atau Show Oshi."
+            ),
             status_code=303,
         )
 
@@ -506,6 +513,7 @@ def create_webhook_route(
             use_jkt,
             use_akb,
             use_mng,
+            use_show,
             True,
         )
         logger.info("Webhook berhasil ditambahkan oleh user id=%s", user["id"])
@@ -573,6 +581,34 @@ def toggle_webhook_route(webhook_id: int, request: Request):
     toggle_webhook(webhook_id, user["id"])
     return RedirectResponse(
         "/?message=" + quote("Status webhook diperbarui."),
+        status_code=303,
+    )
+
+
+@app.post("/webhooks/{webhook_id}/show-toggle")
+def toggle_webhook_show_route(webhook_id: int, request: Request):
+    user = current_user(request)
+    if not user:
+        return go_login()
+
+    hook = get_webhook_for_user(webhook_id, user["id"])
+    if not hook:
+        return RedirectResponse(
+            "/?error=" + quote("Webhook tidak ditemukan."),
+            status_code=303,
+        )
+
+    toggle_webhook_show(webhook_id, user["id"])
+
+    new_status = not bool(int(hook["notify_show"]))
+    message = (
+        "Show Oshi notifier diaktifkan untuk webhook ini."
+        if new_status
+        else "Show Oshi notifier dinonaktifkan untuk webhook ini."
+    )
+
+    return RedirectResponse(
+        "/?message=" + quote(message),
         status_code=303,
     )
 
