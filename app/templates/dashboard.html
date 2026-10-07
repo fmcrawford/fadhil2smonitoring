@@ -127,6 +127,20 @@
     .a31-week-row>div:first-child,.a31-week-row>div:nth-child(4),.a31-week-row>div:last-child{grid-column:1 / -1}
     .a31-row,.a31-hook{align-items:flex-start;flex-direction:column}
   }
+
+  /* Always-visible monitoring health */
+  .a31-health{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .a31-health-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 11px;border:1px solid #292930;border-radius:11px;background:#101014}
+  .a31-health-item small{display:block;color:#8f8f99;font-size:9px;margin-top:2px}
+  .a31-health-name{min-width:0}
+  .a31-health-status{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900;white-space:nowrap}
+  .a31-health-status.live{background:#0f2c21;color:#86efac}
+  .a31-health-status.cached{background:#30270f;color:#fde68a}
+  .a31-health-status.error{background:#35161b;color:#fda4af}
+  .a31-health-status.off{background:#24242a;color:#d4d4d8}
+  @media(max-width:980px){.a31-health{grid-template-columns:1fr 1fr}}
+  @media(max-width:620px){.a31-health{grid-template-columns:1fr}}
+
 </style>
 
 {% set jkt_api = state["groups"]["JKT48"] %}
@@ -158,6 +172,25 @@
 
   {% if message %}<div class="alert success">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+  <section class="a31-health" aria-label="Monitoring health">
+    <div class="a31-health-item">
+      <div class="a31-health-name"><b>JKT48 2-Shot</b><small>{{ jkt.available }} available / {{ jkt.total }} total</small></div>
+      <span class="a31-health-status {{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span>
+    </div>
+    <div class="a31-health-item">
+      <div class="a31-health-name"><b>AKB48 2-Shot</b><small>{{ akb.available }} available / {{ akb.total }} total</small></div>
+      <span class="a31-health-status {{ akb_api.status }}">● {{ akb_api.status|upper }}</span>
+    </div>
+    <div class="a31-health-item">
+      <div class="a31-health-name"><b>JKT48 M&G</b><small>{{ mng.available }} available / {{ mng.total }} total</small></div>
+      <span class="a31-health-status {{ mng_api.status }}">● {{ mng_api.status|upper }}</span>
+    </div>
+    <div class="a31-health-item">
+      <div class="a31-health-name"><b>Local Collector</b><small id="collectorAge" data-ts="{{ state.collector_last_seen or '' }}">Last update: {{ state.collector_last_seen or "belum ada" }}</small></div>
+      <span class="a31-health-status {% if state.collector_last_seen %}live{% else %}off{% endif %}">{% if state.collector_last_seen %}● CONNECTED{% else %}● WAITING{% endif %}</span>
+    </div>
+  </section>
 
   <section class="a31-card a31-action-card">
     <div class="a31-head">
@@ -424,6 +457,28 @@
       try { localStorage.setItem(key, value); } catch (_) {}
     }
   };
+
+
+  /* Human-friendly collector freshness */
+  const collectorAge = document.getElementById('collectorAge');
+  function renderCollectorAge() {
+    if (!collectorAge) return;
+    const raw = collectorAge.dataset.ts;
+    if (!raw) {
+      collectorAge.textContent = 'Last update: belum ada';
+      return;
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return;
+    const sec = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 1000));
+    let label;
+    if (sec < 60) label = `${sec} detik lalu`;
+    else if (sec < 3600) label = `${Math.floor(sec / 60)} menit lalu`;
+    else label = `${Math.floor(sec / 3600)} jam lalu`;
+    collectorAge.textContent = `Last update: ${label}`;
+  }
+  renderCollectorAge();
+  setInterval(renderCollectorAge, 10000);
 
   /* Countdown in Asia/Jakarta wall-clock */
   const jakartaParts = () => {
