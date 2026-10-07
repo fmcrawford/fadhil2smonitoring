@@ -37,11 +37,31 @@ COLLECTOR_SECRET = os.getenv(
 COLLECTOR_INTERVAL = int(
     os.getenv(
         "COLLECTOR_INTERVAL",
-        "15",
+        "60",
+    )
+)
+
+COLLECTOR_403_BACKOFF = int(
+    os.getenv(
+        "COLLECTOR_403_BACKOFF",
+        "180",
     )
 )
 
 TIMEZONE = "Asia/Jakarta"
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Referer": "https://jkt48.com/",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+}
 
 
 if not DEPLEXO_INGEST_URL:
@@ -64,14 +84,57 @@ def now_iso():
     ).isoformat()
 
 
-# Satu session persisten per group.
-SESSIONS = {
-    event["group"]:
-    cffi_requests.Session(
+# Satu browser-like session bersama agar cookie/fingerprint
+# konsisten untuk seluruh endpoint JKT48.
+SESSION = None
+SESSION_WARMED = False
+
+
+def new_session():
+    global SESSION
+    global SESSION_WARMED
+
+    SESSION = cffi_requests.Session(
         impersonate="chrome"
     )
-    for event in EVENTS
-}
+    SESSION_WARMED = False
+    return SESSION
+
+
+def warm_up_session():
+    global SESSION_WARMED
+
+    if SESSION is None:
+        new_session()
+
+    if SESSION_WARMED:
+        return
+
+    checked_at = now_iso()
+
+    try:
+        response = SESSION.get(
+            "https://jkt48.com/",
+            headers=HEADERS,
+            timeout=20,
+        )
+
+        print(
+            f"[{checked_at}] "
+            f"WARMUP HTTP {response.status_code}"
+        )
+
+        SESSION_WARMED = True
+
+    except Exception as exc:
+        print(
+            f"[{checked_at}] "
+            f"WARMUP ERROR "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+new_session()
 
 
 def fetch_group(event):
@@ -79,8 +142,11 @@ def fetch_group(event):
     checked_at = now_iso()
 
     try:
-        response = SESSIONS[group].get(
+        warm_up_session()
+
+        response = SESSION.get(
             event["api_url"],
+            headers=HEADERS,
             timeout=20,
         )
 
@@ -180,9 +246,10 @@ def run_once():
             event
         )
 
-        # Jangan hit dua endpoint pada millisecond yang sama.
+        # Beri jarak antarsource agar pola request
+        # tidak terlalu bursty.
         if index < len(EVENTS) - 1:
-            time.sleep(1)
+            time.sleep(2)
 
     result = send_snapshot(
         groups
@@ -190,10 +257,24 @@ def run_once():
 
     print(
         f"[{now_iso()}] "
-        f"Snapshot -> Deplexo OK | "
+        f"Snapshot -> backend OK | "
         f"{result.get('groups')} | "
         f"restocks={result.get('restocks')}"
     )
+
+    blocked_403 = sum(
+        1
+        for payload in groups.values()
+        if (
+            not payload.get("ok")
+            and payload.get("http_status") == 403
+        )
+    )
+
+    return {
+        "blocked_403": blocked_403,
+        "group_count": len(groups),
+    }
 
 
 def main():
@@ -209,11 +290,16 @@ def main():
         f"Interval: {COLLECTOR_INTERVAL}s"
     )
 
+    print(
+        f"403 backoff: {COLLECTOR_403_BACKOFF}s"
+    )
+
     while True:
         started = time.time()
+        cycle = None
 
         try:
-            run_once()
+            cycle = run_once()
 
         except KeyboardInterrupt:
             raise
@@ -225,16 +311,35 @@ def main():
                 f"{type(exc).__name__}: {exc}"
             )
 
-        elapsed = (
-            time.time()
-            - started
+        all_blocked = (
+            cycle is not None
+            and cycle["group_count"] > 0
+            and cycle["blocked_403"]
+            == cycle["group_count"]
         )
 
-        sleep_for = max(
-            1,
-            COLLECTOR_INTERVAL
-            - elapsed,
-        )
+        if all_blocked:
+            print(
+                f"[{now_iso()}] "
+                "Semua origin HTTP 403. "
+                f"Cooling down {COLLECTOR_403_BACKOFF}s "
+                "dan reset browser session."
+            )
+
+            new_session()
+            sleep_for = COLLECTOR_403_BACKOFF
+
+        else:
+            elapsed = (
+                time.time()
+                - started
+            )
+
+            sleep_for = max(
+                1,
+                COLLECTOR_INTERVAL
+                - elapsed,
+            )
 
         time.sleep(
             sleep_for
