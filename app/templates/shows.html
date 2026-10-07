@@ -40,6 +40,13 @@
   .show-footer{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:10px}
   .show-muted{color:#777783;font-size:9px}
   .show-empty{padding:20px;text-align:center;color:#8f8f99;border:1px dashed #34343a;border-radius:11px}
+  .show-webform{display:grid;gap:9px;margin-top:12px}
+  .show-webform label{display:grid;gap:5px;color:#b4b4bd;font-size:10px;font-weight:700}
+  .show-webform input{width:100%;box-sizing:border-box;background:#0d0d10;border:1px solid #34343a;color:#fff;padding:10px 11px;border-radius:9px;outline:none}
+  .show-webhooks{display:grid;gap:8px;margin-top:12px}
+  .show-webhook-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px;border:1px solid #292930;border-radius:10px;background:#0d0d11}
+  .show-webhook-row small{display:block;color:#85858e;margin-top:3px}
+  .show-webhook-actions{display:flex;gap:6px;flex-wrap:wrap}
   @media(max-width:800px){
     .show-grid{grid-template-columns:1fr}
     .schedule-info{grid-template-columns:1fr}
@@ -112,6 +119,51 @@
       <p class="show-muted">Show collector terakhir: {{ show_state.last_success or show_state.last_seen or "belum ada data" }}</p>
       {% if show_state.last_error %}<p class="show-sub" style="color:#fda4af">{{ show_state.last_error }}</p>{% endif %}
     </article>
+  </section>
+
+  <section class="show-card">
+    <div class="show-label">Discord • Show Oshi Only</div>
+    <h2 style="margin:5px 0 3px;font-size:18px">Webhook khusus Show</h2>
+    <div class="show-sub">
+      Terpisah dari notifier 2-Shot/M&G. Webhook di sini hanya menerima ringkasan show, test Show Oshi, dan reminder sebelum show.
+    </div>
+
+    <form class="show-webform" method="post" action="/shows/webhooks">
+      <label>
+        Nama server/channel
+        <input name="name" placeholder="Server #show-oshi" required>
+      </label>
+      <label>
+        Discord Webhook URL
+        <input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required>
+      </label>
+      <button class="primary" type="submit">🎭 Test & Aktifkan Show</button>
+    </form>
+
+    <div class="show-webhooks">
+      {% for h in show_webhooks %}
+      <div class="show-webhook-row">
+        <div>
+          <b>{{ h.name }}</b>
+          <small>{{ h.masked_url }}</small>
+          <small>{% if h.enabled %}● AKTIF{% else %}○ NONAKTIF{% endif %} • Show Oshi only</small>
+        </div>
+        <div class="show-webhook-actions">
+          <form method="post" action="/shows/webhooks/{{ h.id }}/test">
+            <button class="ghost" type="submit">Test Show</button>
+          </form>
+          <form method="post" action="/shows/webhooks/{{ h.id }}/toggle">
+            <button class="ghost" type="submit">{% if h.enabled %}Disable{% else %}Enable{% endif %}</button>
+          </form>
+          <form method="post" action="/shows/webhooks/{{ h.id }}/delete" onsubmit="return confirm('Hapus webhook Show Oshi ini?')">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="show-empty">Belum ada webhook khusus Show Oshi.</div>
+      {% endfor %}
+    </div>
   </section>
 
   <section class="show-card">

@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -15,8 +16,21 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .config import settings
-from .db import claim_schedule_run, get_user, list_user_webhooks
-from .security import decrypt_webhook, read_session_token
+from .db import (
+    add_webhook,
+    claim_schedule_run,
+    delete_webhook,
+    get_user,
+    get_webhook_for_user,
+    list_user_webhooks,
+    toggle_webhook,
+)
+from .security import (
+    decrypt_webhook,
+    encrypt_webhook,
+    mask_webhook,
+    read_session_token,
+)
 
 
 log = logging.getLogger("48group.show")
@@ -27,6 +41,12 @@ router = APIRouter()
 
 COLOR_PINK = 0xFF69B4
 _SERVICE = None
+
+WEBHOOK_RE = re.compile(
+    r"^https://(?:canary\.|ptb\.)?"
+    r"(?:discord\.com|discordapp\.com)"
+    r"/api/webhooks/\d+/[A-Za-z0-9._-]+/?$"
+)
 
 
 def _connect():
@@ -520,13 +540,69 @@ def _send_show_embed(
     _discord_post(webhook_url, payload)
 
 
-def _enabled_hooks(user_id):
+def _is_dedicated_show_hook(row):
+    return (
+        int(row["notify_show"])
+        and not int(row["notify_jkt"])
+        and not int(row["notify_akb"])
+        and not int(row["notify_mng"])
+    )
+
+
+def _show_hooks(user_id):
     return [
         dict(row)
         for row in list_user_webhooks(user_id)
-        if int(row["enabled"])
-        and int(row["notify_show"])
+        if _is_dedicated_show_hook(row)
     ]
+
+
+def _enabled_hooks(user_id):
+    return [
+        row
+        for row in _show_hooks(user_id)
+        if int(row["enabled"])
+    ]
+
+
+def _show_test_description(user_id):
+    targets = [
+        row["member_name"]
+        for row in _list_oshi(user_id)
+    ]
+
+    now = datetime.now(
+        ZoneInfo(settings.timezone)
+    )
+
+    shows = _list_upcoming_shows(
+        now.date().isoformat(),
+        (now.date() + timedelta(days=14)).isoformat(),
+    )
+
+    for row in shows:
+        show = dict(row)
+        matched = _matched_oshis(show, targets)
+
+        if matched:
+            return (
+                "Notifier Show Oshi aktif dan siap digunakan.\n\n"
+                + _show_block(show, matched)
+            )
+
+    target_text = (
+        ", ".join(targets)
+        if targets
+        else "Belum ada oshi yang dipilih"
+    )
+
+    return (
+        "Notifier **Show Oshi** aktif.\n\n"
+        f"✨ Oshi dipantau: **{target_text}**\n"
+        "📅 Ringkasan: **08:00 & 20:00 WIB**\n"
+        "⏰ Reminder: **sekitar 2 jam sebelum show**\n\n"
+        "Belum ada show yang cocok pada data 14 hari ke depan."
+    )
 
 
 def _maybe_send_summaries():
@@ -944,7 +1020,20 @@ def shows_page(request: Request):
 
         shows.append(show)
 
-    hooks = _enabled_hooks(user["id"])
+    hooks = _show_hooks(user["id"])
+
+    for hook in hooks:
+        hook["masked_url"] = mask_webhook(
+            decrypt_webhook(
+                hook["webhook_url_enc"]
+            )
+        )
+
+    active_hooks = [
+        hook
+        for hook in hooks
+        if int(hook["enabled"])
+    ]
 
     return templates.TemplateResponse(
         request=request,
@@ -954,11 +1043,230 @@ def shows_page(request: Request):
             "shows": shows,
             "oshi_targets": targets,
             "member_options": _member_options(),
-            "active_webhooks": len(hooks),
+            "active_webhooks": len(active_hooks),
+            "show_webhooks": hooks,
             "show_state": show_health(),
             "message": request.query_params.get("message"),
             "error": request.query_params.get("error"),
         },
+    )
+
+
+@router.post("/shows/webhooks")
+def create_show_webhook_route(
+    request: Request,
+    name: str = Form(...),
+    webhook_url: str = Form(...),
+):
+    user = _current_user(request)
+
+    if not user:
+        return _go_login()
+
+    webhook_url = (
+        webhook_url.strip().rstrip("/")
+    )
+
+    if not WEBHOOK_RE.match(webhook_url):
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Format URL webhook Discord tidak valid."
+            ),
+            status_code=303,
+        )
+
+    try:
+        _send_show_embed(
+            webhook_url,
+            "🎭 SHOW OSHI NOTIFIER AKTIF",
+            _show_test_description(user["id"]),
+            content=(
+                "✅ **Webhook khusus Show Oshi aktif**"
+            ),
+        )
+
+        add_webhook(
+            user["id"],
+            name.strip() or "Show Oshi",
+            encrypt_webhook(webhook_url),
+            False,
+            False,
+            False,
+            True,
+            True,
+        )
+
+        return RedirectResponse(
+            "/shows?message="
+            + quote(
+                "Webhook Show Oshi berhasil diaktifkan."
+            ),
+            status_code=303,
+        )
+
+    except Exception as exc:
+        log.exception(
+            "Gagal menambahkan webhook Show Oshi"
+        )
+
+        message = str(exc)
+        if len(message) > 350:
+            message = message[:350] + "..."
+
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Webhook Show Oshi gagal: "
+                + message
+            ),
+            status_code=303,
+        )
+
+
+@router.post(
+    "/shows/webhooks/{webhook_id}/test"
+)
+def test_show_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+    user = _current_user(request)
+
+    if not user:
+        return _go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if (
+        not hook
+        or not _is_dedicated_show_hook(hook)
+    ):
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Webhook Show Oshi tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    try:
+        _send_show_embed(
+            decrypt_webhook(
+                hook["webhook_url_enc"]
+            ),
+            "🧪 TEST SHOW OSHI",
+            _show_test_description(user["id"]),
+            content=(
+                "🎭 **Test notifier Show Oshi**"
+            ),
+        )
+
+        return RedirectResponse(
+            "/shows?message="
+            + quote(
+                "Test webhook Show Oshi berhasil."
+            ),
+            status_code=303,
+        )
+
+    except Exception as exc:
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Test webhook Show Oshi gagal: "
+                + str(exc)[:300]
+            ),
+            status_code=303,
+        )
+
+
+@router.post(
+    "/shows/webhooks/{webhook_id}/toggle"
+)
+def toggle_show_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+    user = _current_user(request)
+
+    if not user:
+        return _go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if (
+        not hook
+        or not _is_dedicated_show_hook(hook)
+    ):
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Webhook Show Oshi tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    toggle_webhook(
+        webhook_id,
+        user["id"],
+    )
+
+    return RedirectResponse(
+        "/shows?message="
+        + quote(
+            "Status webhook Show Oshi diperbarui."
+        ),
+        status_code=303,
+    )
+
+
+@router.post(
+    "/shows/webhooks/{webhook_id}/delete"
+)
+def delete_show_webhook_route(
+    webhook_id: int,
+    request: Request,
+):
+    user = _current_user(request)
+
+    if not user:
+        return _go_login()
+
+    hook = get_webhook_for_user(
+        webhook_id,
+        user["id"],
+    )
+
+    if (
+        not hook
+        or not _is_dedicated_show_hook(hook)
+    ):
+        return RedirectResponse(
+            "/shows?error="
+            + quote(
+                "Webhook Show Oshi tidak ditemukan."
+            ),
+            status_code=303,
+        )
+
+    delete_webhook(
+        webhook_id,
+        user["id"],
+    )
+
+    return RedirectResponse(
+        "/shows?message="
+        + quote(
+            "Webhook Show Oshi dihapus."
+        ),
+        status_code=303,
     )
 
 
