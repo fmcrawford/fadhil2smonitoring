@@ -14,7 +14,7 @@
   .v2-metric small{display:block;color:#8f8f99;margin-bottom:7px}
   .v2-metric strong{font-size:27px}
   .v2-metric span{color:#71717a;font-size:10px;margin-left:6px}
-  .v2-groups{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .v2-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
   .v2-group{padding:17px;border:1px solid #292930;border-radius:16px;background:#141418}
   .v2-group-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
   .v2-group-head h2{margin:0}
@@ -201,13 +201,14 @@
 
 {% set jkt_api = state["groups"]["JKT48"] %}
 {% set akb_api = state["groups"]["AKB48"] %}
+{% set mng_api = state["groups"]["JKT48_MNG"] %}
 
 <div class="v2-shell">
   <header class="v2-hero">
     <div>
-      <div class="v2-kicker">48GROUP • 2-SHOT CONTROL CENTER</div>
-      <h1>2-Shot Monitor</h1>
-      <div class="v2-sub">Availability, sniping target, restock, dan Discord notification dalam satu dashboard.</div>
+      <div class="v2-kicker">48GROUP • 2-SHOT + M&G CONTROL CENTER</div>
+      <h1>48Group Ticket Monitor</h1>
+      <div class="v2-sub">2-Shot JKT48/AKB48, JKT48 M&G, sniping target, restock, dan Discord notification.</div>
     </div>
     <div class="v2-actions">
       <span class="v2-live">{% if state.running %}● MONITOR ON{% else %}● STOPPED{% endif %}</span>
@@ -221,7 +222,7 @@
 
   <section class="v2-grid4">
     <div class="v2-metric"><small>Available Slots</small><strong>{{ available|length }}</strong><span>snapshot</span></div>
-    <div class="v2-metric"><small>Total Monitored</small><strong>{{ jkt.total + akb.total }}</strong><span>slot</span></div>
+    <div class="v2-metric"><small>Total Monitored</small><strong>{{ jkt.total + akb.total + mng.total }}</strong><span>slot</span></div>
     <div class="v2-metric"><small>Sniping Targets</small><strong>{{ sniping_targets|length }}</strong><span>member</span></div>
     <div class="v2-metric"><small>Recent Restocks</small><strong>{{ restocks|length }}</strong><span>event</span></div>
   </section>
@@ -245,6 +246,15 @@
       </div>
       <div class="v2-meta"><span>HTTP <b>{{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ akb_api.last_success or "Belum ada" }}</b></span></div>
     </article>
+    <article class="v2-group">
+      <div class="v2-group-head"><h2>JKT48 M&G</h2><span class="v2-api {{ mng_api.status }}">● {{ mng_api.status|upper }}</span></div>
+      <div class="v2-stat3">
+        <div><strong>{{ mng.available }}</strong><span>Tersedia</span></div>
+        <div><strong>{{ mng.sold_out }}</strong><span>Sold out</span></div>
+        <div><strong>{{ mng.total }}</strong><span>Total slot</span></div>
+      </div>
+      <div class="v2-meta"><span>HTTP <b>{{ mng_api.last_http if mng_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ mng_api.last_success or "Belum ada" }}</b></span></div>
+    </article>
   </section>
 
   <section class="v2-main">
@@ -254,7 +264,7 @@
       </div>
       <form id="snipeForm" method="post" action="/sniping" class="v2-searchrow">
         <div class="v2-picker">
-          <input id="memberSearch" class="v2-input" type="search" autocomplete="off" placeholder="Cari member JKT48 / AKB48...">
+          <input id="memberSearch" class="v2-input" type="search" autocomplete="off" placeholder="Cari member JKT48 / AKB48 / M&G...">
           <input id="memberTarget" type="hidden" name="target" required>
           <div id="memberResults" class="v2-results">
             {% for group, name in member_options %}
@@ -272,7 +282,7 @@
         <div class="v2-target">
           <div>
             <b>🎯 {{ t.member_name }}</b>
-            <small>{{ t.group_name }}</small>
+            <small>{{ display_names.get(t.group_name, t.group_name) }}</small>
             {% if t.is_available %}
               <small class="available">● AVAILABLE • {{ t.available_slots }} slot • stok {{ t.available_stock }}</small>
             {% else %}
@@ -297,11 +307,12 @@
         <div class="v2-status-row"><span>Last live data</span><b>{{ state.last_success or "Belum ada" }}</b></div>
         <div class="v2-status-row"><span>JKT48 API</span><b>{{ jkt_api.status|upper }} • HTTP {{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></div>
         <div class="v2-status-row"><span>AKB48 API</span><b>{{ akb_api.status|upper }} • HTTP {{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></div>
+        <div class="v2-status-row"><span>JKT48 M&G API</span><b>{{ mng_api.status|upper }} • HTTP {{ mng_api.last_http if mng_api.last_http is not none else "-" }}</b></div>
         <div class="v2-status-row"><span>Schedule</span><b>08:00 • 12:00 • 20:00 WIB</b></div>
       </div>
-      {% if jkt_api.status == "live" and akb_api.status == "live" %}
-      <div class="v2-note v2-good">✓ Collector terhubung dan JKT48 + AKB48 sedang LIVE.</div>
-      {% elif jkt_api.status == "error" or akb_api.status == "error" %}
+      {% if jkt_api.status == "live" and akb_api.status == "live" and mng_api.status == "live" %}
+      <div class="v2-note v2-good">✓ Collector terhubung dan JKT48 2-Shot + AKB48 2-Shot + JKT48 M&G sedang LIVE.</div>
+      {% elif jkt_api.status == "error" or akb_api.status == "error" or mng_api.status == "error" %}
       <div class="v2-note v2-bad">Ada sumber yang gagal. Cache tetap digunakan bila tersedia.</div>
       {% else %}
       <div class="v2-note v2-warn">⚠ Sebagian data memakai cache. Pastikan collector.py lokal berjalan.</div>
@@ -320,7 +331,7 @@
         <tbody>
           {% for m in available %}
           <tr data-search="{{ m.group|lower }} {{ m.name|lower }} {{ m.session|lower }} {{ m.track|lower }}">
-            <td><span class="v2-pill">{{ m.group }}</span></td>
+            <td><span class="v2-pill">{{ display_names.get(m.group, m.group) }}</span></td>
             <td><b>{{ m.name }}</b>{% if (m.group, m.name) in target_keys %}<span class="v2-targetmark">🎯 TARGET</span>{% endif %}</td>
             <td>{{ m.session }}</td><td>{{ m.track }}</td><td><b>{{ m.stock }}</b></td>
             <td><a class="v2-buy" href="{{ m.buy_url }}" target="_blank" rel="noopener noreferrer">🛒 Beli</a></td>
@@ -340,7 +351,7 @@
         {% for r in restocks %}
         <div class="v2-restock">
           <div class="v2-restock-main">
-            <b>{{ r.group_name }} • {{ r.member_name }}{% if r.is_target %}<span class="v2-targetmark">🎯 TARGET</span>{% endif %}</b>
+            <b>{{ display_names.get(r.group_name, r.group_name) }} • {{ r.member_name }}{% if r.is_target %}<span class="v2-targetmark">🎯 TARGET</span>{% endif %}</b>
             <small>{{ r.session_name }} • {{ r.track_name }} • {{ r.old_stock }} → {{ r.new_stock }}</small>
             <small>{{ r.detected_at }}</small>
           </div>
@@ -369,7 +380,7 @@
       <form action="/webhooks" method="post" class="v2-webform">
         <label>Nama server/channel<input name="name" placeholder="Contoh: Server Utama #restock" required></label>
         <label>Discord webhook URL<input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required></label>
-        <div class="v2-checks"><label><input type="checkbox" name="notify_jkt" checked><span>JKT48</span></label><label><input type="checkbox" name="notify_akb" checked><span>AKB48</span></label></div>
+        <div class="v2-checks"><label><input type="checkbox" name="notify_jkt" checked><span>JKT48 (2-Shot + M&G)</span></label><label><input type="checkbox" name="notify_akb" checked><span>AKB48</span></label></div>
         <button class="primary" type="submit">Test & Aktifkan Webhook</button>
       </form>
     </article>
@@ -379,7 +390,7 @@
       <div class="v2-hooks">
         {% for h in webhooks %}
         <div class="v2-hook">
-          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small></div>
+          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48 2-Shot + M&G{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small></div>
           <div class="v2-rowactions">
             <span class="v2-pill">{% if h.enabled %}ACTIVE{% else %}OFF{% endif %}</span>
             <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>

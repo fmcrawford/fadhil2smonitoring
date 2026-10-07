@@ -154,7 +154,7 @@ def list_user_webhooks(user_id):
 def list_enabled_webhooks(group_name: Optional[str] = None):
     sql = "SELECT * FROM webhooks WHERE enabled=1"
 
-    if group_name == "JKT48":
+    if group_name in ("JKT48", "JKT48_MNG"):
         sql += " AND notify_jkt=1"
     elif group_name == "AKB48":
         sql += " AND notify_akb=1"

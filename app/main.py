@@ -61,6 +61,13 @@ WEBHOOK_RE = re.compile(
 BUY_URLS = {
     "JKT48": "https://jkt48.com/purchase/exclusive?code=EX5B99",
     "AKB48": "https://jkt48.com/purchase/exclusive?code=EXD1A1",
+    "JKT48_MNG": "https://jkt48.com/purchase/exclusive?code=EX24AE",
+}
+
+DISPLAY_NAMES = {
+    "JKT48": "JKT48 2-Shot",
+    "AKB48": "AKB48 2-Shot",
+    "JKT48_MNG": "JKT48 M&G",
 }
 
 service = None
@@ -90,7 +97,7 @@ async def lifespan(app: FastAPI):
         logger.info("48Group Monitor stopped.")
 
 
-app = FastAPI(title="48Group 2-Shot Monitor", lifespan=lifespan)
+app = FastAPI(title="48Group Ticket Monitor", lifespan=lifespan)
 app.mount(
     "/static",
     StaticFiles(directory=str(BASE_DIR / "static")),
@@ -242,6 +249,8 @@ def dashboard(request: Request):
             "available": available,
             "jkt": stats("JKT48"),
             "akb": stats("AKB48"),
+            "mng": stats("JKT48_MNG"),
+            "display_names": DISPLAY_NAMES,
             "webhooks": hooks,
             "restocks": restocks,
             "member_options": member_options,

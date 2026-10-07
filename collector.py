@@ -17,6 +17,10 @@ EVENTS = [
         "group": "AKB48",
         "api_url": "https://jkt48.com/api/v1/exclusives/EXD1A1/bonus?lang=id",
     },
+    {
+        "group": "JKT48_MNG",
+        "api_url": "https://jkt48.com/api/v1/exclusives/EX24AE/bonus?lang=id",
+    },
 ]
 
 

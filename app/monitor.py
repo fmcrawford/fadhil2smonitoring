@@ -25,9 +25,12 @@ EVENTS = {
     "AKB48": {
         "buy_url": "https://jkt48.com/purchase/exclusive?code=EXD1A1",
     },
+    "JKT48_MNG": {
+        "buy_url": "https://jkt48.com/purchase/exclusive?code=EX24AE",
+    },
 }
 
-GROUP_NAMES = ["JKT48", "AKB48"]
+GROUP_NAMES = ["JKT48", "AKB48", "JKT48_MNG"]
 
 COLOR_GREEN = 0x2ECC71
 COLOR_BLUE = 0x3498DB
@@ -225,6 +228,10 @@ def send_test_message(webhook_url: str):
 def broadcast_restock(item: dict, old_stock: int):
     hooks = list_enabled_webhooks(item["group"])
 
+    is_mng = item["group"] == "JKT48_MNG"
+    product_label = "M&G" if is_mng else "2-SHOT"
+    display_group = "JKT48 M&G" if is_mng else item["group"]
+
     if not hooks:
         log.info(
             "Restock %s %s terdeteksi, tetapi tidak ada webhook aktif.",
@@ -236,12 +243,12 @@ def broadcast_restock(item: dict, old_stock: int):
     sniping_users = target_user_ids(item["group"], item["name"])
 
     base_description = (
-        f"> 🏢 **Grup:** `{item['group']}`\n"
+        f"> 🏢 **Event:** `{display_group}`\n"
         f"> 👤 **Member:** `{item['name']}`\n"
         f"> 🕒 **Sesi:** `{item['session']}`\n"
         f"> 📍 **Jalur:** `{item['track']}`\n"
         f"> 📦 **Stok:** `{old_stock} → {item['stock']}`\n\n"
-        f"👉 **[BELI TIKET 2-SHOT]({item['buy_url']})**"
+        f"👉 **[BELI TIKET {product_label}]({item['buy_url']})**"
     )
 
     for hook in hooks:
@@ -262,7 +269,7 @@ def broadcast_restock(item: dict, old_stock: int):
                 )
                 color = COLOR_GOLD
             else:
-                title = "🚨 2-SHOT RESTOCK ALERT!"
+                title = f"🚨 {product_label} RESTOCK ALERT!"
                 description = base_description
                 content = (
                     "@everyone 🚨 **RESTOCK TERDETEKSI!**"
@@ -320,6 +327,7 @@ def send_scheduled_report(members, report_hour, group_meta=None):
 
     jkt_text = available_group_text(members, "JKT48")
     akb_text = available_group_text(members, "AKB48")
+    mng_text = available_group_text(members, "JKT48_MNG")
 
     for hook in hooks:
         try:
@@ -331,8 +339,18 @@ def send_scheduled_report(members, report_hour, group_meta=None):
                 suffix = "" if jkt_status == "live" else " ⚠️ cached"
                 fields.append(
                     {
-                        "name": f"🏢 JKT48{suffix}",
+                        "name": f"🏢 JKT48 2-Shot{suffix}",
                         "value": jkt_text,
+                        "inline": False,
+                    }
+                )
+
+                mng_status = group_meta.get("JKT48_MNG", {}).get("status", "cached")
+                mng_suffix = "" if mng_status == "live" else " ⚠️ cached"
+                fields.append(
+                    {
+                        "name": f"🤝 JKT48 M&G{mng_suffix}",
+                        "value": mng_text,
                         "inline": False,
                     }
                 )
@@ -353,7 +371,7 @@ def send_scheduled_report(members, report_hour, group_meta=None):
 
             send_embed(
                 webhook_url,
-                f"📊 REKAP 2-SHOT • {report_hour:02d}:00 WIB",
+                f"📊 REKAP 48GROUP • {report_hour:02d}:00 WIB",
                 "Status ketersediaan terbaru dari local collector.",
                 COLOR_PURPLE,
                 fields=fields,
