@@ -37,38 +37,11 @@ COLLECTOR_SECRET = os.getenv(
 COLLECTOR_INTERVAL = int(
     os.getenv(
         "COLLECTOR_INTERVAL",
-        "60",
-    )
-)
-
-COLLECTOR_403_BACKOFF = int(
-    os.getenv(
-        "COLLECTOR_403_BACKOFF",
-        "180",
-    )
-)
-
-COLLECTOR_GROUP_BACKOFF_MAX = int(
-    os.getenv(
-        "COLLECTOR_GROUP_BACKOFF_MAX",
-        "900",
+        "15",
     )
 )
 
 TIMEZONE = "Asia/Jakarta"
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Referer": "https://jkt48.com/",
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
-}
 
 
 if not DEPLEXO_INGEST_URL:
@@ -91,102 +64,23 @@ def now_iso():
     ).isoformat()
 
 
-# Session dan cooldown dipisah per source.
-GROUP_STATE = {
-    event["group"]: {
-        "session": None,
-        "warmed": False,
-        "failures": 0,
-        "retry_at": 0.0,
-    }
-    for event in EVENTS
-}
-
-
-def new_group_session(group):
-    state = GROUP_STATE[group]
-    state["session"] = cffi_requests.Session(
+# Satu session persisten per group.
+SESSIONS = {
+    event["group"]:
+    cffi_requests.Session(
         impersonate="chrome"
     )
-    state["warmed"] = False
-    return state["session"]
-
-
-def warm_up_group(group):
-    state = GROUP_STATE[group]
-
-    if state["session"] is None:
-        new_group_session(group)
-
-    if state["warmed"]:
-        return
-
-    checked_at = now_iso()
-
-    try:
-        response = state["session"].get(
-            "https://jkt48.com/",
-            headers=HEADERS,
-            timeout=20,
-        )
-
-        print(
-            f"[{checked_at}] "
-            f"{group} WARMUP HTTP "
-            f"{response.status_code}"
-        )
-
-        state["warmed"] = True
-
-    except Exception as exc:
-        print(
-            f"[{checked_at}] "
-            f"{group} WARMUP ERROR "
-            f"{type(exc).__name__}: {exc}"
-        )
-
-
-for _event in EVENTS:
-    new_group_session(
-        _event["group"]
-    )
+    for event in EVENTS
+}
 
 
 def fetch_group(event):
     group = event["group"]
     checked_at = now_iso()
-    state = GROUP_STATE[group]
-    now_ts = time.time()
-
-    if now_ts < state["retry_at"]:
-        retry_in = max(
-            1,
-            int(state["retry_at"] - now_ts),
-        )
-
-        print(
-            f"[{checked_at}] "
-            f"{group} COOLDOWN "
-            f"{retry_in}s"
-        )
-
-        return {
-            "ok": False,
-            "retrying": True,
-            "http_status": 403,
-            "checked_at": checked_at,
-            "retry_in": retry_in,
-            "error": (
-                "Cooldown setelah Origin HTTP 403"
-            ),
-        }
 
     try:
-        warm_up_group(group)
-
-        response = state["session"].get(
+        response = SESSIONS[group].get(
             event["api_url"],
-            headers=HEADERS,
             timeout=20,
         )
 
@@ -199,43 +93,11 @@ def fetch_group(event):
             f"{group} HTTP {status}"
         )
 
-        if status == 403:
-            state["failures"] += 1
-
-            delay = min(
-                COLLECTOR_403_BACKOFF
-                * (2 ** (state["failures"] - 1)),
-                COLLECTOR_GROUP_BACKOFF_MAX,
-            )
-
-            state["retry_at"] = (
-                time.time() + delay
-            )
-
-            new_group_session(group)
-
-            print(
-                f"[{checked_at}] "
-                f"{group} backoff {delay}s "
-                f"(403 strike {state['failures']})"
-            )
-
-            return {
-                "ok": False,
-                "retrying": False,
-                "http_status": 403,
-                "checked_at": checked_at,
-                "retry_in": delay,
-                "error": "Origin HTTP 403",
-            }
-
         if status != 200:
             return {
                 "ok": False,
-                "retrying": False,
                 "http_status": status,
                 "checked_at": checked_at,
-                "retry_in": 0,
                 "error": (
                     f"Origin HTTP {status}"
                 ),
@@ -247,10 +109,8 @@ def fetch_group(event):
         except Exception as exc:
             return {
                 "ok": False,
-                "retrying": False,
                 "http_status": 200,
                 "checked_at": checked_at,
-                "retry_in": 0,
                 "error": (
                     "Origin HTTP 200 "
                     "tetapi JSON invalid: "
@@ -258,14 +118,10 @@ def fetch_group(event):
                 ),
             }
 
-        state["failures"] = 0
-        state["retry_at"] = 0.0
-
         return {
             "ok": True,
             "http_status": 200,
             "checked_at": checked_at,
-            "retry_in": 0,
             "data": data,
         }
 
@@ -278,10 +134,8 @@ def fetch_group(event):
 
         return {
             "ok": False,
-            "retrying": False,
             "http_status": None,
             "checked_at": checked_at,
-            "retry_in": 0,
             "error": (
                 f"{type(exc).__name__}: {exc}"
             ),
@@ -326,10 +180,9 @@ def run_once():
             event
         )
 
-        # Beri jarak antarsource agar pola request
-        # tidak terlalu bursty.
+        # Jangan hit dua endpoint pada millisecond yang sama.
         if index < len(EVENTS) - 1:
-            time.sleep(2)
+            time.sleep(1)
 
     result = send_snapshot(
         groups
@@ -337,14 +190,10 @@ def run_once():
 
     print(
         f"[{now_iso()}] "
-        f"Snapshot -> backend OK | "
+        f"Snapshot -> Deplexo OK | "
         f"{result.get('groups')} | "
         f"restocks={result.get('restocks')}"
     )
-
-    return {
-        "group_count": len(groups),
-    }
 
 
 def main():
@@ -360,22 +209,11 @@ def main():
         f"Interval: {COLLECTOR_INTERVAL}s"
     )
 
-    print(
-        f"403 base backoff: "
-        f"{COLLECTOR_403_BACKOFF}s"
-    )
-
-    print(
-        f"403 max backoff: "
-        f"{COLLECTOR_GROUP_BACKOFF_MAX}s"
-    )
-
     while True:
         started = time.time()
-        cycle = None
 
         try:
-            cycle = run_once()
+            run_once()
 
         except KeyboardInterrupt:
             raise

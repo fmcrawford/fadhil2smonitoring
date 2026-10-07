@@ -35,13 +35,6 @@ from .monitor import (
     send_test_message,
     snapshot,
 )
-from .show_feature import (
-    init_show_db,
-    router as show_router,
-    show_health,
-    start_show_service,
-    stop_show_service,
-)
 from .security import (
     decrypt_webhook,
     encrypt_webhook,
@@ -95,27 +88,19 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("COLLECTOR_SECRET wajib di-set.")
 
     init_db()
-    init_show_db()
-
     service = MonitorService()
     service.start()
-    start_show_service()
-
     logger.info("48Group Monitor started in LOCAL COLLECTOR mode.")
 
     try:
         yield
     finally:
-        stop_show_service()
-
         if service:
             service.stop()
-
         logger.info("48Group Monitor stopped.")
 
 
 app = FastAPI(title="48Group Ticket Monitor", lifespan=lifespan)
-app.include_router(show_router)
 app.mount(
     "/static",
     StaticFiles(directory=str(BASE_DIR / "static")),
@@ -160,7 +145,6 @@ def health():
             "last_success": state["last_success"],
             "last_error": state["last_error"],
             "groups": state["groups"],
-            "show_collector": show_health(),
         }
     )
 
@@ -493,11 +477,7 @@ def create_webhook_route(
 
     if not use_jkt and not use_akb and not use_mng:
         return RedirectResponse(
-            "/?error="
-            + quote(
-                "Pilih minimal satu notifikasi: "
-                "JKT48 2-Shot, AKB48 2-Shot, atau JKT48 M&G."
-            ),
+            "/?error=" + quote("Pilih minimal satu notifikasi: JKT48 2-Shot, AKB48 2-Shot, atau JKT48 M&G."),
             status_code=303,
         )
 
@@ -510,7 +490,6 @@ def create_webhook_route(
             use_jkt,
             use_akb,
             use_mng,
-            False,
             True,
         )
         logger.info("Webhook berhasil ditambahkan oleh user id=%s", user["id"])

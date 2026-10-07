@@ -79,7 +79,6 @@ RUNTIME_STATE = {
             "last_http": None,
             "error": "Menunggu collector lokal.",
             "retry_in": 0,
-            "consecutive_failures": 0,
         }
         for group in GROUP_NAMES
     },
@@ -822,59 +821,12 @@ class MonitorService:
                     report.get("error")
                     or "Local collector gagal mengambil API."
                 )
-                retrying = bool(
-                    report.get("retrying")
-                )
-                retry_in = int(
-                    report.get("retry_in")
-                    or 0
-                )
-
                 with STATE_LOCK:
                     meta = RUNTIME_STATE["groups"][group]
-
-                    # Siklus cooldown tidak menambah strike baru.
-                    if not retrying:
-                        meta["consecutive_failures"] = (
-                            int(
-                                meta.get(
-                                    "consecutive_failures",
-                                    0,
-                                )
-                            )
-                            + 1
-                        )
-
-                    failures = int(
-                        meta.get(
-                            "consecutive_failures",
-                            0,
-                        )
-                    )
-
-                    if dashboard_by_group[group]:
-                        meta["status"] = (
-                            "retrying"
-                            if failures < 3
-                            else "cached"
-                        )
-                    else:
-                        meta["status"] = "error"
-
+                    meta["status"] = "cached" if dashboard_by_group[group] else "error"
                     meta["error"] = error
-                    meta["retry_in"] = retry_in
 
-                result_summary[group] = {
-                    "ok": False,
-                    "error": error,
-                    "retrying": (
-                        failures < 3
-                        and bool(
-                            dashboard_by_group[group]
-                        )
-                    ),
-                    "retry_in": retry_in,
-                }
+                result_summary[group] = {"ok": False, "error": error}
                 continue
 
             parsed = parse_api_data(report.get("data"), group)
@@ -934,7 +886,6 @@ class MonitorService:
                 meta["last_http"] = http_status or 200
                 meta["error"] = None
                 meta["retry_in"] = 0
-                meta["consecutive_failures"] = 0
 
             result_summary[group] = {"ok": True, "slots": len(parsed)}
 
@@ -1078,7 +1029,7 @@ class MonitorService:
         with STATE_LOCK:
             for group in GROUP_NAMES:
                 meta = RUNTIME_STATE["groups"][group]
-                if meta["status"] in ("live", "retrying"):
+                if meta["status"] == "live":
                     meta["status"] = "cached"
                     meta["error"] = (
                         f"Local collector belum mengirim update selama {int(age)} detik."

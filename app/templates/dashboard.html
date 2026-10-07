@@ -98,7 +98,6 @@
   .a31-badge{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900}
   .a31-badge.live{background:#0f2c21;color:#86efac}
   .a31-badge.cached{background:#30270f;color:#fde68a}
-  .a31-badge.retrying{background:#2b2412;color:#facc15}
   .a31-badge.error{background:#35161b;color:#fda4af}
   .a31-product-meta{margin-top:6px;font-size:9px;color:#777783}
   .a31-status{display:grid}
@@ -166,7 +165,6 @@
     </div>
     <div class="a31-actions">
       <span class="a31-live">{% if state.running %}● MONITOR ON{% else %}● STOPPED{% endif %}</span>
-      <a class="ghost" href="/shows" style="display:inline-flex;align-items:center;text-decoration:none">🎭 Informasi Show</a>
       <span class="muted">@{{ user.username }}</span>
       <form method="post" action="/logout"><button class="ghost">Keluar</button></form>
     </div>
