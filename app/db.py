@@ -81,8 +81,38 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_member_targets_lookup
             ON member_targets(group_name, member_name);
+
+            CREATE TABLE IF NOT EXISTS mng_weekly_status (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_key TEXT NOT NULL,
+                member_name TEXT NOT NULL,
+                cutoff_at TEXT NOT NULL,
+                baseline_session_count INTEGER NOT NULL,
+                baseline_session_names TEXT NOT NULL,
+                total_stock_at_cutoff INTEGER NOT NULL,
+                eligible INTEGER NOT NULL DEFAULT 0,
+                maxed INTEGER NOT NULL DEFAULT 0,
+                released_at TEXT,
+                released_session_names TEXT,
+                notified_at TEXT,
+                UNIQUE(week_key, member_name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mng_weekly_status_week
+            ON mng_weekly_status(week_key);
             """
         )
+
+        # Migrasi aman: webhook lama tetap menerima M&G secara default.
+        webhook_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(webhooks)").fetchall()
+        }
+        if "notify_mng" not in webhook_columns:
+            conn.execute(
+                "ALTER TABLE webhooks "
+                "ADD COLUMN notify_mng INTEGER NOT NULL DEFAULT 1"
+            )
 
 
 def utcnow_iso():
@@ -120,6 +150,7 @@ def add_webhook(
     webhook_url_enc,
     notify_jkt,
     notify_akb,
+    notify_mng,
     mention_everyone=True,
 ):
     with _connect() as conn:
@@ -127,8 +158,8 @@ def add_webhook(
             """
             INSERT INTO webhooks(
                 user_id,name,webhook_url_enc,enabled,
-                notify_jkt,notify_akb,mention_everyone,created_at
-            ) VALUES (?,?,?,1,?,?,?,?)
+                notify_jkt,notify_akb,notify_mng,mention_everyone,created_at
+            ) VALUES (?,?,?,1,?,?,?,?,?)
             """,
             (
                 user_id,
@@ -136,6 +167,7 @@ def add_webhook(
                 webhook_url_enc,
                 int(notify_jkt),
                 int(notify_akb),
+                int(notify_mng),
                 int(mention_everyone),
                 utcnow_iso(),
             ),
@@ -154,10 +186,12 @@ def list_user_webhooks(user_id):
 def list_enabled_webhooks(group_name: Optional[str] = None):
     sql = "SELECT * FROM webhooks WHERE enabled=1"
 
-    if group_name in ("JKT48", "JKT48_MNG"):
+    if group_name == "JKT48":
         sql += " AND notify_jkt=1"
     elif group_name == "AKB48":
         sql += " AND notify_akb=1"
+    elif group_name == "JKT48_MNG":
+        sql += " AND notify_mng=1"
 
     with _connect() as conn:
         return conn.execute(sql).fetchall()
@@ -309,3 +343,83 @@ def target_user_ids(group_name: str, member_name: str):
             (group_name, member_name),
         ).fetchall()
         return {int(row["user_id"]) for row in rows}
+
+
+
+def mng_week_has_cutoff(week_key: str) -> bool:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM mng_weekly_status WHERE week_key=? LIMIT 1",
+            (week_key,),
+        ).fetchone()
+        return row is not None
+
+
+def save_mng_weekly_cutoff(week_key: str, cutoff_at: str, rows: list[dict]):
+    with _connect() as conn:
+        inserted = 0
+        for row in rows:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO mng_weekly_status(
+                    week_key, member_name, cutoff_at,
+                    baseline_session_count, baseline_session_names,
+                    total_stock_at_cutoff, eligible, maxed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    week_key,
+                    row["member_name"],
+                    cutoff_at,
+                    int(row["session_count"]),
+                    row["session_names_json"],
+                    int(row["total_stock"]),
+                    int(row["eligible"]),
+                    int(row["maxed"]),
+                ),
+            )
+            inserted += cur.rowcount
+        return inserted
+
+
+def list_mng_weekly_status(week_key: str):
+    with _connect() as conn:
+        return conn.execute(
+            """
+            SELECT * FROM mng_weekly_status
+            WHERE week_key=?
+            ORDER BY eligible DESC, maxed DESC, member_name COLLATE NOCASE ASC
+            """,
+            (week_key,),
+        ).fetchall()
+
+
+def mark_mng_extra_session_live(
+    week_key: str,
+    member_name: str,
+    released_at: str,
+    released_session_names: str,
+) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            UPDATE mng_weekly_status
+            SET released_at=?, released_session_names=?
+            WHERE week_key=? AND member_name=?
+              AND eligible=1 AND released_at IS NULL
+            """,
+            (released_at, released_session_names, week_key, member_name),
+        )
+        return cur.rowcount == 1
+
+
+def mark_mng_release_notified(week_key: str, member_name: str):
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE mng_weekly_status
+            SET notified_at=?
+            WHERE week_key=? AND member_name=?
+            """,
+            (utcnow_iso(), week_key, member_name),
+        )

@@ -22,12 +22,15 @@ from .db import (
     get_webhook_for_user,
     init_db,
     list_member_targets,
+    list_mng_weekly_status,
     list_user_webhooks,
     recent_restocks,
     toggle_webhook,
 )
 from .monitor import (
     MonitorService,
+    build_mng_weekly_board,
+    mng_week_key,
     send_activation_message,
     send_test_message,
     snapshot,
@@ -240,6 +243,16 @@ def dashboard(request: Request):
         ) in target_keys
         restocks.append(item)
 
+    current_mng_week = mng_week_key()
+    mng_qualification_rows = [
+        dict(row)
+        for row in list_mng_weekly_status(current_mng_week)
+    ]
+    mng_weekly_board = build_mng_weekly_board(
+        members,
+        mng_qualification_rows,
+    )
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -251,6 +264,9 @@ def dashboard(request: Request):
             "akb": stats("AKB48"),
             "mng": stats("JKT48_MNG"),
             "display_names": DISPLAY_NAMES,
+            "mng_week_key": current_mng_week,
+            "mng_weekly_board": mng_weekly_board,
+            "mng_cutoff_captured": bool(mng_qualification_rows),
             "webhooks": hooks,
             "restocks": restocks,
             "member_options": member_options,
@@ -442,6 +458,7 @@ def create_webhook_route(
     webhook_url: str = Form(...),
     notify_jkt: str | None = Form(None),
     notify_akb: str | None = Form(None),
+    notify_mng: str | None = Form(None),
 ):
     user = current_user(request)
     if not user:
@@ -456,10 +473,11 @@ def create_webhook_route(
 
     use_jkt = notify_jkt == "on"
     use_akb = notify_akb == "on"
+    use_mng = notify_mng == "on"
 
-    if not use_jkt and not use_akb:
+    if not use_jkt and not use_akb and not use_mng:
         return RedirectResponse(
-            "/?error=" + quote("Pilih minimal satu grup: JKT48 atau AKB48."),
+            "/?error=" + quote("Pilih minimal satu notifikasi: JKT48 2-Shot, AKB48 2-Shot, atau JKT48 M&G."),
             status_code=303,
         )
 
@@ -471,6 +489,7 @@ def create_webhook_route(
             encrypt_webhook(webhook_url),
             use_jkt,
             use_akb,
+            use_mng,
             True,
         )
         logger.info("Webhook berhasil ditambahkan oleh user id=%s", user["id"])

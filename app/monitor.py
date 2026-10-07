@@ -1,6 +1,7 @@
+import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import requests
@@ -9,7 +10,12 @@ from .config import settings
 from .db import (
     add_restock_log,
     list_enabled_webhooks,
+    list_mng_weekly_status,
     load_event_state,
+    mark_mng_extra_session_live,
+    mark_mng_release_notified,
+    mng_week_has_cutoff,
+    save_mng_weekly_cutoff,
     target_user_ids,
     upsert_event_state,
 )
@@ -36,6 +42,13 @@ COLOR_GREEN = 0x2ECC71
 COLOR_BLUE = 0x3498DB
 COLOR_PURPLE = 0x9B59B6
 COLOR_GOLD = 0xF1C40F
+COLOR_ORANGE = 0xE67E22
+
+MNG_GROUP = "JKT48_MNG"
+MNG_MAX_SESSIONS = 4
+MNG_CUTOFF_HOUR = 12
+MNG_CUTOFF_WINDOW_MINUTES = 10
+MNG_RELEASE_HOUR = 19
 
 STATE_LOCK = threading.Lock()
 
@@ -75,6 +88,122 @@ def _parse_iso(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+
+def mng_week_key(now=None):
+    now = now or _jakarta_now()
+    days_since_sunday = (now.weekday() + 1) % 7
+    sunday = now.date() - timedelta(days=days_since_sunday)
+    return sunday.isoformat()
+
+
+def _mng_member_rollup(members):
+    rollup = {}
+    for item in members:
+        if item.get("group") != MNG_GROUP:
+            continue
+        name = item.get("name")
+        if not name:
+            continue
+        row = rollup.setdefault(
+            name,
+            {
+                "member_name": name,
+                "sessions": set(),
+                "total_stock": 0,
+                "available_slots": 0,
+            },
+        )
+        row["sessions"].add(str(item.get("session") or "-"))
+        stock = int(item.get("stock", 0) or 0)
+        row["total_stock"] += stock
+        if stock > 0:
+            row["available_slots"] += 1
+    return rollup
+
+
+def build_mng_weekly_board(members, qualification_rows):
+    current = _mng_member_rollup(members)
+    saved = {row["member_name"]: dict(row) for row in qualification_rows}
+    names = sorted(set(current) | set(saved), key=str.casefold)
+    board = []
+
+    for name in names:
+        live = current.get(
+            name,
+            {
+                "member_name": name,
+                "sessions": set(),
+                "total_stock": 0,
+                "available_slots": 0,
+            },
+        )
+        q = saved.get(name)
+        session_count = len(live["sessions"])
+        total_stock = int(live["total_stock"])
+        all_sold_out = session_count > 0 and total_stock <= 0
+
+        status = "TRACKING"
+        status_label = "Tracking"
+        priority = 5
+
+        if q:
+            if q.get("released_at"):
+                status = "EXTRA_LIVE"
+                status_label = "Extra Session Live"
+                priority = 0
+            elif int(q.get("eligible", 0)):
+                status = "ELIGIBLE"
+                status_label = "Eligible • Menunggu Senin 19:00"
+                priority = 1
+            elif int(q.get("maxed", 0)):
+                status = "MAXED"
+                status_label = "Max 4 Sesi • Tidak Ada Tambahan"
+                priority = 2
+            else:
+                status = "NOT_QUALIFIED"
+                status_label = "Tidak Qualified pada Cutoff"
+                priority = 4
+        elif all_sold_out and session_count >= MNG_MAX_SESSIONS:
+            status = "MAXED_PREVIEW"
+            status_label = "4/4 Sold Out • Maksimum"
+            priority = 2
+        elif all_sold_out:
+            status = "SOLD_OUT_WAITING"
+            status_label = "Sold Out • Menunggu Cutoff Minggu"
+            priority = 3
+        elif total_stock > 0:
+            status = "AVAILABLE"
+            status_label = "Tiket Masih Tersedia"
+            priority = 4
+
+        released_sessions = []
+        if q and q.get("released_session_names"):
+            try:
+                released_sessions = json.loads(q["released_session_names"])
+            except Exception:
+                released_sessions = []
+
+        board.append(
+            {
+                "member_name": name,
+                "session_count": session_count,
+                "total_stock": total_stock,
+                "available_slots": int(live["available_slots"]),
+                "all_sold_out": all_sold_out,
+                "status": status,
+                "status_label": status_label,
+                "priority": priority,
+                "eligible": bool(q and int(q.get("eligible", 0))),
+                "maxed": bool(q and int(q.get("maxed", 0))),
+                "released_at": q.get("released_at") if q else None,
+                "released_sessions": released_sessions,
+                "buy_url": EVENTS[MNG_GROUP]["buy_url"],
+            }
+        )
+
+    return sorted(board, key=lambda x: (x["priority"], x["member_name"].casefold()))
 
 
 def snapshot():
@@ -296,6 +425,81 @@ def broadcast_restock(item: dict, old_stock: int):
             log.exception("Gagal mengirim restock webhook id=%s", hook["id"])
 
 
+
+def broadcast_mng_cutoff(rows, week_key: str):
+    hooks = list_enabled_webhooks(MNG_GROUP)
+    if not hooks:
+        return
+
+    eligible = [r["member_name"] for r in rows if r["eligible"]]
+    maxed = [r["member_name"] for r in rows if r["maxed"]]
+    eligible_text = "\n".join(f"⭐ **{n}**" for n in eligible) if eligible else "Belum ada member yang qualified."
+    maxed_text = "\n".join(f"🔒 **{n}**" for n in maxed) if maxed else "Tidak ada."
+
+    for hook in hooks:
+        try:
+            webhook_url = decrypt_webhook(hook["webhook_url_enc"])
+            content = (
+                "@everyone 🤝 **M&G WEEKLY CUTOFF!**"
+                if hook["mention_everyone"]
+                else "🤝 **M&G WEEKLY CUTOFF!**"
+            )
+            send_embed(
+                webhook_url,
+                "🤝 JKT48 M&G • HASIL CUTOFF MINGGU 12:00",
+                (
+                    f"Weekly cycle `{week_key}` telah dikunci.\n\n"
+                    "**Berhak sesi tambahan (sesi < 4 dan seluruh tiket SO):**\n"
+                    f"{eligible_text}\n\n"
+                    "**Sudah maksimum 4 sesi:**\n"
+                    f"{maxed_text}\n\n"
+                    "Sesi tambahan member qualified dipantau pada Senin 19:00 WIB."
+                ),
+                COLOR_ORANGE,
+                content=content,
+            )
+        except Exception:
+            log.exception("Gagal mengirim M&G cutoff webhook id=%s", hook["id"])
+
+
+def broadcast_mng_extra_session(member_name: str, new_sessions: list[str]):
+    hooks = list_enabled_webhooks(MNG_GROUP)
+    if not hooks:
+        return
+
+    sniping_users = target_user_ids(MNG_GROUP, member_name)
+    session_text = "\n".join(f"• `{name}`" for name in new_sessions) or "• Sesi baru"
+    buy_url = EVENTS[MNG_GROUP]["buy_url"]
+
+    for hook in hooks:
+        try:
+            webhook_url = decrypt_webhook(hook["webhook_url_enc"])
+            is_target = int(hook["user_id"]) in sniping_users
+            title = (
+                "🎯 M&G TARGET • EXTRA SESSION LIVE!"
+                if is_target
+                else "🤝 M&G EXTRA SESSION LIVE!"
+            )
+            content = (
+                "@everyone 🚨 **SESI TAMBAHAN M&G SUDAH LIVE!**"
+                if hook["mention_everyone"]
+                else "🚨 **SESI TAMBAHAN M&G SUDAH LIVE!**"
+            )
+            send_embed(
+                webhook_url,
+                title,
+                (
+                    f"👤 **{member_name}**\n\n"
+                    f"**Sesi baru terdeteksi:**\n{session_text}\n\n"
+                    f"👉 **[BELI M&G SEKARANG]({buy_url})**"
+                ),
+                COLOR_GOLD,
+                content=content,
+            )
+        except Exception:
+            log.exception("Gagal mengirim M&G release webhook id=%s", hook["id"])
+
+
 def available_group_text(members, group_name, limit=18):
     available = [
         member
@@ -345,6 +549,7 @@ def send_scheduled_report(members, report_hour, group_meta=None):
                     }
                 )
 
+            if hook["notify_mng"]:
                 mng_status = group_meta.get("JKT48_MNG", {}).get("status", "cached")
                 mng_suffix = "" if mng_status == "live" else " ⚠️ cached"
                 fields.append(
@@ -614,6 +819,98 @@ class MonitorService:
             "restocks": restock_count,
         }
 
+    def maybe_capture_mng_sunday_cutoff(self):
+        now = _jakarta_now()
+        if now.weekday() != 6 or now.hour != MNG_CUTOFF_HOUR:
+            return
+        if now.minute >= MNG_CUTOFF_WINDOW_MINUTES:
+            return
+
+        state = snapshot()
+        meta = state["groups"].get(MNG_GROUP, {})
+        if meta.get("status") != "live":
+            return
+
+        week_key = mng_week_key(now)
+        if mng_week_has_cutoff(week_key):
+            return
+
+        rollup = _mng_member_rollup(state["members"])
+        if not rollup:
+            return
+
+        rows = []
+        for member_name, info in rollup.items():
+            sessions = sorted(info["sessions"])
+            session_count = len(sessions)
+            total_stock = int(info["total_stock"])
+            all_sold_out = session_count > 0 and total_stock <= 0
+            maxed = all_sold_out and session_count >= MNG_MAX_SESSIONS
+            eligible = all_sold_out and session_count < MNG_MAX_SESSIONS
+            rows.append(
+                {
+                    "member_name": member_name,
+                    "session_count": session_count,
+                    "session_names_json": json.dumps(sessions, ensure_ascii=False),
+                    "total_stock": total_stock,
+                    "eligible": eligible,
+                    "maxed": maxed,
+                }
+            )
+
+        inserted = save_mng_weekly_cutoff(week_key, now.isoformat(), rows)
+        if inserted:
+            log.warning("M&G Sunday cutoff tersimpan week=%s members=%s", week_key, inserted)
+            broadcast_mng_cutoff(rows, week_key)
+
+    def maybe_detect_mng_monday_release(self):
+        now = _jakarta_now()
+        if now.weekday() != 0 or now.hour < MNG_RELEASE_HOUR:
+            return
+
+        state = snapshot()
+        meta = state["groups"].get(MNG_GROUP, {})
+        if meta.get("status") != "live":
+            return
+
+        week_key = mng_week_key(now)
+        rows = [dict(row) for row in list_mng_weekly_status(week_key)]
+        eligible = [
+            row for row in rows
+            if int(row.get("eligible", 0)) and not row.get("released_at")
+        ]
+        if not eligible:
+            return
+
+        live = _mng_member_rollup(state["members"])
+        for row in eligible:
+            member_name = row["member_name"]
+            current = live.get(member_name)
+            if not current:
+                continue
+
+            try:
+                baseline = set(json.loads(row["baseline_session_names"]))
+            except Exception:
+                baseline = set()
+
+            new_sessions = sorted(set(current["sessions"]) - baseline)
+            if not new_sessions:
+                continue
+
+            released = mark_mng_extra_session_live(
+                week_key,
+                member_name,
+                now.isoformat(),
+                json.dumps(new_sessions, ensure_ascii=False),
+            )
+            if not released:
+                continue
+
+            log.warning("M&G EXTRA SESSION LIVE %s | %s", member_name, new_sessions)
+            broadcast_mng_extra_session(member_name, new_sessions)
+            mark_mng_release_notified(week_key, member_name)
+
     def _mark_stale_if_needed(self):
         state = snapshot()
         last_seen = _parse_iso(state.get("collector_last_seen"))
@@ -649,6 +946,8 @@ class MonitorService:
             while not self.stop_event.is_set():
                 try:
                     self._mark_stale_if_needed()
+                    self.maybe_capture_mng_sunday_cutoff()
+                    self.maybe_detect_mng_monday_release()
                     self.maybe_send_scheduled_report()
                 except Exception as exc:
                     log.exception("Monitor loop error")

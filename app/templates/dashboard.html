@@ -197,6 +197,27 @@
     .v2-rowactions .v2-pill{grid-column:1 / -1}
   }
 
+
+  /* ===== M&G WEEKLY REVIEW UI ===== */
+  .product-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 -2px}
+  .product-title h2{margin:0;font-size:16px}.product-title p{margin:3px 0 0;color:#8f8f99;font-size:11px}
+  .two-shot-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .mng-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(330px,.7fr);gap:14px}
+  .mng-rule-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .mng-rule{padding:11px;border:1px solid #2a2a31;border-radius:11px;background:#0e0e12}
+  .mng-rule strong{display:block;font-size:12px;margin-bottom:3px}.mng-rule small{color:#8f8f99;line-height:1.4}
+  .mng-cutoff{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .mng-status{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900;white-space:nowrap}
+  .mng-status.extra_live{background:#0d2c20;color:#86efac}.mng-status.eligible{background:#30270f;color:#fde68a}
+  .mng-status.maxed,.mng-status.maxed_preview{background:#35161b;color:#fda4af}.mng-status.sold_out_waiting{background:#27210e;color:#fcd34d}
+  .mng-status.available{background:#15223a;color:#93c5fd}.mng-status.not_qualified,.mng-status.tracking{background:#24242a;color:#d4d4d8}
+  .mng-board{display:grid;gap:8px;margin-top:14px}
+  .mng-row{display:grid;grid-template-columns:minmax(150px,1fr) 82px 90px minmax(190px,1fr) auto;gap:10px;align-items:center;padding:11px;border:1px solid #292930;border-radius:11px;background:#0e0e12}
+  .mng-row small{display:block;color:#8f8f99;margin-top:3px}.mng-session-count{font-weight:900}.mng-fast{display:flex;gap:6px;justify-content:flex-end}
+  .event-badge{display:inline-flex;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:900;background:#23183d;color:#c4b5fd}
+  @media(max-width:980px){.two-shot-grid,.mng-hero{grid-template-columns:1fr}.mng-row{grid-template-columns:1fr 80px 90px minmax(160px,1fr) auto}}
+  @media(max-width:720px){.mng-rule-grid{grid-template-columns:1fr}.mng-row{grid-template-columns:1fr 1fr}.mng-row>div:first-child,.mng-row>div:nth-child(4),.mng-fast{grid-column:1 / -1}.mng-fast{justify-content:flex-start}}
+
 </style>
 
 {% set jkt_api = state["groups"]["JKT48"] %}
@@ -227,40 +248,50 @@
     <div class="v2-metric"><small>Recent Restocks</small><strong>{{ restocks|length }}</strong><span>event</span></div>
   </section>
 
-  <section class="v2-groups">
+  <div class="product-title">
+    <div><div class="v2-label">2-SHOT</div><h2>2-Shot Monitoring</h2><p>Restock realtime JKT48 & AKB48. Terpisah dari aturan weekly M&G.</p></div>
+  </div>
+  <section class="two-shot-grid">
     <article class="v2-group">
-      <div class="v2-group-head"><h2>JKT48</h2><span class="v2-api {{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span></div>
-      <div class="v2-stat3">
-        <div><strong>{{ jkt.available }}</strong><span>Tersedia</span></div>
-        <div><strong>{{ jkt.sold_out }}</strong><span>Sold out</span></div>
-        <div><strong>{{ jkt.total }}</strong><span>Total slot</span></div>
-      </div>
+      <div class="v2-group-head"><h2>JKT48 <span class="event-badge">2-SHOT</span></h2><span class="v2-api {{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span></div>
+      <div class="v2-stat3"><div><strong>{{ jkt.available }}</strong><span>Tersedia</span></div><div><strong>{{ jkt.sold_out }}</strong><span>Sold out</span></div><div><strong>{{ jkt.total }}</strong><span>Total slot</span></div></div>
       <div class="v2-meta"><span>HTTP <b>{{ jkt_api.last_http if jkt_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ jkt_api.last_success or "Belum ada" }}</b></span></div>
     </article>
     <article class="v2-group">
-      <div class="v2-group-head"><h2>AKB48</h2><span class="v2-api {{ akb_api.status }}">● {{ akb_api.status|upper }}</span></div>
-      <div class="v2-stat3">
-        <div><strong>{{ akb.available }}</strong><span>Tersedia</span></div>
-        <div><strong>{{ akb.sold_out }}</strong><span>Sold out</span></div>
-        <div><strong>{{ akb.total }}</strong><span>Total slot</span></div>
-      </div>
+      <div class="v2-group-head"><h2>AKB48 <span class="event-badge">2-SHOT</span></h2><span class="v2-api {{ akb_api.status }}">● {{ akb_api.status|upper }}</span></div>
+      <div class="v2-stat3"><div><strong>{{ akb.available }}</strong><span>Tersedia</span></div><div><strong>{{ akb.sold_out }}</strong><span>Sold out</span></div><div><strong>{{ akb.total }}</strong><span>Total slot</span></div></div>
       <div class="v2-meta"><span>HTTP <b>{{ akb_api.last_http if akb_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ akb_api.last_success or "Belum ada" }}</b></span></div>
     </article>
+  </section>
+
+  <div class="product-title">
+    <div><div class="v2-label">JKT48 M&G • WEEKLY ENGINE</div><h2>Meet & Greet Monitoring</h2><p>Qualification Minggu 12:00 WIB • maksimum 4 sesi • extra session Senin 19:00 WIB.</p></div>
+  </div>
+  <section class="mng-hero">
     <article class="v2-group">
-      <div class="v2-group-head"><h2>JKT48 M&G</h2><span class="v2-api {{ mng_api.status }}">● {{ mng_api.status|upper }}</span></div>
-      <div class="v2-stat3">
-        <div><strong>{{ mng.available }}</strong><span>Tersedia</span></div>
-        <div><strong>{{ mng.sold_out }}</strong><span>Sold out</span></div>
-        <div><strong>{{ mng.total }}</strong><span>Total slot</span></div>
-      </div>
+      <div class="v2-group-head"><h2>JKT48 <span class="event-badge">M&G</span></h2><span class="v2-api {{ mng_api.status }}">● {{ mng_api.status|upper }}</span></div>
+      <div class="v2-stat3"><div><strong>{{ mng.available }}</strong><span>Slot tersedia</span></div><div><strong>{{ mng.sold_out }}</strong><span>Slot sold out</span></div><div><strong>{{ mng.total }}</strong><span>Total slot</span></div></div>
       <div class="v2-meta"><span>HTTP <b>{{ mng_api.last_http if mng_api.last_http is not none else "-" }}</b></span><span>Last live <b>{{ mng_api.last_success or "Belum ada" }}</b></span></div>
+      <div class="mng-cutoff"><span class="v2-pill">Week {{ mng_week_key }}</span>{% if mng_cutoff_captured %}<span class="mng-status eligible">✓ CUTOFF TERSIMPAN</span>{% else %}<span class="mng-status tracking">MENUNGGU CUTOFF</span>{% endif %}</div>
     </article>
+    <article class="v2-card">
+      <div class="v2-label">Weekly Rules</div>
+      <div class="mng-rule-grid"><div class="mng-rule"><strong>① Minggu 12:00</strong><small>Member harus sudah sold out seluruh tiketnya saat cutoff.</small></div><div class="mng-rule"><strong>② Maks. 4 Sesi</strong><small>Jika sudah 4 sesi dan semuanya SO, tidak mendapat tambahan lagi.</small></div><div class="mng-rule"><strong>③ Senin 19:00</strong><small>Sesi baru member eligible dipantau dan link beli diprioritaskan.</small></div></div>
+    </article>
+  </section>
+  <section class="v2-card">
+    <div class="v2-head"><div><div class="v2-label">M&G Weekly Race</div><h2>Status Member Mingguan</h2><p>Extra Session Live → Eligible → Max 4 → Sold Out menunggu cutoff → Available.</p></div></div>
+    <div class="mng-board">
+      {% for row in mng_weekly_board %}
+      <div class="mng-row"><div><b>{{ row.member_name }}</b><small>JKT48 M&G</small></div><div><span class="mng-session-count">{{ row.session_count }}/4</span><small>sesi</small></div><div><b>{{ row.total_stock }}</b><small>total tiket</small></div><div><span class="mng-status {{ row.status|lower }}">{{ row.status_label }}</span>{% if row.released_sessions %}<small>Sesi baru: {{ row.released_sessions|join(", ") }}</small>{% endif %}</div><div class="mng-fast">{% if row.status == "EXTRA_LIVE" %}<a class="v2-buy" href="{{ row.buy_url }}" target="_blank" rel="noopener noreferrer">⚡ BELI SEKARANG</a>{% else %}<a class="v2-buy blue" href="{{ row.buy_url }}" target="_blank" rel="noopener noreferrer">Buka M&G</a>{% endif %}</div></div>
+      {% else %}<p class="empty">Belum ada data M&G dari collector.</p>{% endfor %}
+    </div>
   </section>
 
   <section class="v2-main">
     <article class="v2-card">
       <div class="v2-head">
-        <div><div class="v2-label">Priority Watch</div><h2>🎯 Member Sniping</h2><p>Ketik nama member, pilih hasilnya, lalu tambahkan sebagai target.</p></div>
+        <div><div class="v2-label">Priority Watch</div><h2>🎯 Member Sniping</h2><p>Cari target berdasarkan event. JKT48 2-Shot, AKB48 2-Shot, dan JKT48 M&G dipantau terpisah.</p></div>
       </div>
       <form id="snipeForm" method="post" action="/sniping" class="v2-searchrow">
         <div class="v2-picker">
@@ -380,7 +411,7 @@
       <form action="/webhooks" method="post" class="v2-webform">
         <label>Nama server/channel<input name="name" placeholder="Contoh: Server Utama #restock" required></label>
         <label>Discord webhook URL<input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/..." required></label>
-        <div class="v2-checks"><label><input type="checkbox" name="notify_jkt" checked><span>JKT48 (2-Shot + M&G)</span></label><label><input type="checkbox" name="notify_akb" checked><span>AKB48</span></label></div>
+        <div class="v2-checks"><label><input type="checkbox" name="notify_jkt" checked><span>JKT48 2-Shot</span></label><label><input type="checkbox" name="notify_akb" checked><span>AKB48 2-Shot</span></label><label><input type="checkbox" name="notify_mng" checked><span>JKT48 M&G</span></label></div>
         <button class="primary" type="submit">Test & Aktifkan Webhook</button>
       </form>
     </article>
@@ -390,7 +421,7 @@
       <div class="v2-hooks">
         {% for h in webhooks %}
         <div class="v2-hook">
-          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48 2-Shot + M&G{% endif %}{% if h.notify_jkt and h.notify_akb %} • {% endif %}{% if h.notify_akb %}AKB48{% endif %} • @everyone restock</small></div>
+          <div><b>{{ h.name }}</b><small>{{ h.masked_url }}</small><small>{% if h.notify_jkt %}JKT48 2-Shot{% endif %}{% if h.notify_jkt and (h.notify_akb or h.notify_mng) %} • {% endif %}{% if h.notify_akb %}AKB48 2-Shot{% endif %}{% if h.notify_akb and h.notify_mng %} • {% endif %}{% if h.notify_mng %}JKT48 M&G{% endif %} • @everyone restock</small></div>
           <div class="v2-rowactions">
             <span class="v2-pill">{% if h.enabled %}ACTIVE{% else %}OFF{% endif %}</span>
             <form method="post" action="/webhooks/{{ h.id }}/test"><button class="ghost">Test</button></form>
