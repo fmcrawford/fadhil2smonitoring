@@ -50,6 +50,18 @@ MNG_CUTOFF_HOUR = 12
 MNG_CUTOFF_WINDOW_MINUTES = 10
 MNG_RELEASE_HOUR = 19
 
+MNG_HIGHLIGHT_MEMBERS = [
+    "Grace Octaviani",
+    "Michelle Alexandra",
+    "Jazzlyn Trisha",
+    "Fiony Alveria",
+    "Indah Cahya",
+    "Marsha Lenathea",
+    "Nina Tutachia",
+    "Fritzy Rosmerian",
+    "Aurhel Alana",
+]
+
 STATE_LOCK = threading.Lock()
 
 RUNTIME_STATE = {
@@ -521,6 +533,67 @@ def available_group_text(members, group_name, limit=18):
     return "\n".join(lines)[:1000]
 
 
+
+def available_mng_highlights_text(members):
+    wanted = {name.casefold(): name for name in MNG_HIGHLIGHT_MEMBERS}
+    grouped = {}
+
+    for item in members:
+        if item.get("group") != MNG_GROUP:
+            continue
+
+        name = str(item.get("name") or "").strip()
+        key = name.casefold()
+        if key not in wanted:
+            continue
+
+        stock = int(item.get("stock", 0) or 0)
+        if stock <= 0:
+            continue
+
+        row = grouped.setdefault(
+            wanted[key],
+            {
+                "total_stock": 0,
+                "slots": [],
+            },
+        )
+        row["total_stock"] += stock
+        row["slots"].append(
+            {
+                "session": str(item.get("session") or "-"),
+                "track": str(item.get("track") or "-"),
+                "stock": stock,
+            }
+        )
+
+    if not grouped:
+        return (
+            "Tidak ada member pantauan yang sedang tersedia. "
+            "Semua target highlight sedang sold out / belum tersedia."
+        )
+
+    lines = []
+    for name in MNG_HIGHLIGHT_MEMBERS:
+        row = grouped.get(name)
+        if not row:
+            continue
+
+        lines.append(f"🎟️ **{name}** — **{row['total_stock']} tiket**")
+
+        for slot in row["slots"][:2]:
+            lines.append(
+                f"↳ `{slot['session']}` • `{slot['track']}` "
+                f"→ **{slot['stock']}**"
+            )
+
+        remaining = len(row["slots"]) - 2
+        if remaining > 0:
+            lines.append(f"↳ +{remaining} slot tersedia lainnya")
+
+    return "\n".join(lines)[:3800]
+
+
 def send_scheduled_report(members, report_hour, group_meta=None):
     hooks = list_enabled_webhooks()
 
@@ -531,17 +604,18 @@ def send_scheduled_report(members, report_hour, group_meta=None):
 
     jkt_text = available_group_text(members, "JKT48")
     akb_text = available_group_text(members, "AKB48")
-    mng_text = available_group_text(members, "JKT48_MNG")
+    mng_highlight_text = available_mng_highlights_text(members)
 
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
-            fields = []
+
+            shot_fields = []
 
             if hook["notify_jkt"]:
-                jkt_status = group_meta.get("JKT48", {}).get("status", "cached")
-                suffix = "" if jkt_status == "live" else " ⚠️ cached"
-                fields.append(
+                status = group_meta.get("JKT48", {}).get("status", "cached")
+                suffix = "" if status == "live" else " ⚠️ cached"
+                shot_fields.append(
                     {
                         "name": f"🏢 JKT48 2-Shot{suffix}",
                         "value": jkt_text,
@@ -549,38 +623,39 @@ def send_scheduled_report(members, report_hour, group_meta=None):
                     }
                 )
 
-            if hook["notify_mng"]:
-                mng_status = group_meta.get("JKT48_MNG", {}).get("status", "cached")
-                mng_suffix = "" if mng_status == "live" else " ⚠️ cached"
-                fields.append(
-                    {
-                        "name": f"🤝 JKT48 M&G{mng_suffix}",
-                        "value": mng_text,
-                        "inline": False,
-                    }
-                )
-
             if hook["notify_akb"]:
-                akb_status = group_meta.get("AKB48", {}).get("status", "cached")
-                suffix = "" if akb_status == "live" else " ⚠️ cached"
-                fields.append(
+                status = group_meta.get("AKB48", {}).get("status", "cached")
+                suffix = "" if status == "live" else " ⚠️ cached"
+                shot_fields.append(
                     {
-                        "name": f"🏢 AKB48{suffix}",
+                        "name": f"🏢 AKB48 2-Shot{suffix}",
                         "value": akb_text,
                         "inline": False,
                     }
                 )
 
-            if not fields:
-                continue
+            if shot_fields:
+                send_embed(
+                    webhook_url,
+                    f"📸 2-SHOT SUMMARY • {report_hour:02d}:00 WIB",
+                    "Ringkasan slot 2-Shot yang masih tersedia.",
+                    COLOR_PURPLE,
+                    fields=shot_fields,
+                )
 
-            send_embed(
-                webhook_url,
-                f"📊 REKAP 48GROUP • {report_hour:02d}:00 WIB",
-                "Status ketersediaan terbaru dari local collector.",
-                COLOR_PURPLE,
-                fields=fields,
-            )
+            if hook["notify_mng"]:
+                status = group_meta.get(MNG_GROUP, {}).get("status", "cached")
+                suffix = "" if status == "live" else " ⚠️ cached"
+
+                send_embed(
+                    webhook_url,
+                    f"🤝 M&G HIGHLIGHT • {report_hour:02d}:00 WIB{suffix}",
+                    (
+                        "Hanya menampilkan **member pantauan yang masih tersedia**.\n\n"
+                        f"{mng_highlight_text}"
+                    ),
+                    COLOR_ORANGE,
+                )
 
         except Exception:
             log.exception("Scheduled report gagal webhook id=%s", hook["id"])
