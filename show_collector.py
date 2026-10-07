@@ -13,6 +13,9 @@ COLLECTOR_SECRET = os.getenv("COLLECTOR_SECRET", "").strip()
 SHOW_REFRESH_INTERVAL = int(
     os.getenv("SHOW_REFRESH_INTERVAL", "900")
 )
+SHOW_403_BACKOFF = int(
+    os.getenv("SHOW_403_BACKOFF", "1800")
+)
 SHOW_DAYS_AHEAD = int(
     os.getenv("SHOW_DAYS_AHEAD", "14")
 )
@@ -26,7 +29,8 @@ if not COLLECTOR_SECRET:
     print("ERROR: COLLECTOR_SECRET belum di-set.")
     sys.exit(1)
 
-SESSION = cffi_requests.Session(impersonate="chrome")
+SESSION = None
+SESSION_WARMED = False
 
 HEADERS = {
     "User-Agent": (
@@ -35,8 +39,58 @@ HEADERS = {
         "Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     "Referer": "https://jkt48.com/",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
 }
+
+
+def new_session():
+    global SESSION
+    global SESSION_WARMED
+
+    SESSION = cffi_requests.Session(
+        impersonate="chrome"
+    )
+    SESSION_WARMED = False
+    return SESSION
+
+
+def warm_up_session():
+    global SESSION_WARMED
+
+    if SESSION is None:
+        new_session()
+
+    if SESSION_WARMED:
+        return
+
+    checked_at = now_iso()
+
+    try:
+        response = SESSION.get(
+            "https://jkt48.com/",
+            headers=HEADERS,
+            timeout=20,
+        )
+
+        print(
+            f"[{checked_at}] "
+            f"WARMUP HTTP {response.status_code}"
+        )
+
+        SESSION_WARMED = True
+
+    except Exception as exc:
+        print(
+            f"[{checked_at}] "
+            f"WARMUP ERROR "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+new_session()
 
 
 def now_iso():
@@ -95,6 +149,8 @@ def fetch_show_schedule():
             f"?lang=id&month={month}&year={year}"
         )
 
+        warm_up_session()
+
         response = SESSION.get(
             url,
             headers=HEADERS,
@@ -106,6 +162,29 @@ def fetch_show_schedule():
             f"SCHEDULE {month}/{year} "
             f"HTTP {response.status_code}"
         )
+
+        if int(response.status_code) == 403:
+            print(
+                f"[{checked_at}] "
+                "Schedule kena 403. "
+                "Reset session lalu retry sekali."
+            )
+
+            new_session()
+            time.sleep(5)
+            warm_up_session()
+
+            response = SESSION.get(
+                url,
+                headers=HEADERS,
+                timeout=20,
+            )
+
+            print(
+                f"[{checked_at}] "
+                f"SCHEDULE RETRY {month}/{year} "
+                f"HTTP {response.status_code}"
+            )
 
         if int(response.status_code) != 200:
             raise RuntimeError(
@@ -171,6 +250,25 @@ def fetch_show_schedule():
                 f"HTTP {detail_res.status_code}"
             )
 
+            if int(detail_res.status_code) == 403:
+                # Detail show tidak boleh menjatuhkan seluruh snapshot.
+                # Retry sekali dengan session baru, lalu lanjut ke show berikutnya.
+                new_session()
+                time.sleep(3)
+                warm_up_session()
+
+                detail_res = SESSION.get(
+                    detail_url,
+                    headers=HEADERS,
+                    timeout=20,
+                )
+
+                print(
+                    f"[{checked_at}] "
+                    f"SHOW RETRY {ref_code} "
+                    f"HTTP {detail_res.status_code}"
+                )
+
             if int(detail_res.status_code) == 200:
                 try:
                     detail_json = detail_res.json()
@@ -235,7 +333,7 @@ def fetch_show_schedule():
                 "show_url": show_url,
             }
 
-            time.sleep(0.2)
+            time.sleep(1.0)
 
     items = sorted(
         shows_by_ref.values(),
@@ -321,31 +419,50 @@ def main():
     print(
         f"Window: {SHOW_DAYS_AHEAD} hari"
     )
+    print(
+        f"403 backoff: {SHOW_403_BACKOFF}s"
+    )
 
     while True:
         started = time.time()
+        blocked = False
 
         try:
             run_once()
         except KeyboardInterrupt:
             raise
         except Exception as exc:
-            print(
-                f"[{now_iso()}] "
-                "SHOW COLLECTOR ERROR: "
+            message = (
                 f"{type(exc).__name__}: "
                 f"{exc}"
             )
+
+            print(
+                f"[{now_iso()}] "
+                "SHOW COLLECTOR ERROR: "
+                f"{message}"
+            )
+
+            blocked = "HTTP 403" in message
 
         elapsed = (
             time.time() - started
         )
 
-        sleep_for = max(
-            5,
-            SHOW_REFRESH_INTERVAL
-            - elapsed,
-        )
+        if blocked:
+            print(
+                f"[{now_iso()}] "
+                "Show collector cooling down "
+                f"{SHOW_403_BACKOFF}s karena 403."
+            )
+            new_session()
+            sleep_for = SHOW_403_BACKOFF
+        else:
+            sleep_for = max(
+                5,
+                SHOW_REFRESH_INTERVAL
+                - elapsed,
+            )
 
         time.sleep(sleep_for)
 
