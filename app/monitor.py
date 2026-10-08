@@ -736,26 +736,76 @@ class MonitorService:
             except Exception:
                 continue
 
+        now_utc = datetime.now(timezone.utc)
+
         with STATE_LOCK:
             if restored:
                 RUNTIME_STATE["members"] = restored
 
             latest = None
+            stale_groups = []
+
             for group in GROUP_NAMES:
                 meta = RUNTIME_STATE["groups"][group]
-                meta["status"] = "cached"
-                meta["last_success"] = latest_by_group[group]
-                meta["error"] = "Menunggu snapshot baru dari local collector."
+                latest_group = latest_by_group[group]
 
-                if latest_by_group[group] and (
-                    latest is None or latest_by_group[group] > latest
+                meta["last_success"] = latest_group
+                meta["last_attempt"] = latest_group
+                meta["retry_in"] = 0
+
+                parsed = _parse_iso(latest_group)
+
+                if parsed is not None:
+                    parsed_utc = parsed.astimezone(timezone.utc)
+                    age = max(
+                        0,
+                        (now_utc - parsed_utc).total_seconds(),
+                    )
+
+                    if age <= settings.collector_stale_after:
+                        meta["status"] = "live"
+                        meta["last_http"] = 200
+                        meta["error"] = None
+                    else:
+                        meta["status"] = "cached"
+                        meta["last_http"] = 200
+                        meta["error"] = (
+                            "Snapshot sukses terakhir berumur "
+                            f"{int(age)} detik."
+                        )
+                        stale_groups.append(group)
+                else:
+                    meta["status"] = "cached"
+                    meta["last_http"] = None
+                    meta["error"] = (
+                        "Menunggu snapshot baru dari local collector."
+                    )
+                    stale_groups.append(group)
+
+                if latest_group and (
+                    latest is None
+                    or latest_group > latest
                 ):
-                    latest = latest_by_group[group]
+                    latest = latest_group
 
             RUNTIME_STATE["last_success"] = latest
+            RUNTIME_STATE["last_check"] = latest
+            RUNTIME_STATE["collector_last_seen"] = latest
+
+            if stale_groups:
+                RUNTIME_STATE["last_error"] = (
+                    "Data belum fresh untuk: "
+                    + ", ".join(stale_groups)
+                )
+            else:
+                RUNTIME_STATE["last_error"] = None
 
         if restored:
-            log.info("Cache database dipulihkan: %s slot.", len(restored))
+            log.info(
+                "State database dipulihkan: %s slot. "
+                "Freshness ditentukan dari updated_at terakhir.",
+                len(restored),
+            )
 
     def start(self):
         if self.thread and self.thread.is_alive():
