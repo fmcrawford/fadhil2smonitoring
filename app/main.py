@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     init_db()
     service = MonitorService()
     service.start()
-    logger.info("48Group Monitor started in LOCAL COLLECTOR mode.")
+    logger.info("48Group Monitor started in HYBRID COLLECTOR mode.")
 
     try:
         yield
@@ -139,7 +139,7 @@ def health():
         {
             "ok": True,
             "monitor_running": state["running"],
-            "mode": "local_collector",
+            "mode": "hybrid_collector",
             "collector_last_seen": state.get("collector_last_seen"),
             "last_check": state["last_check"],
             "last_success": state["last_success"],

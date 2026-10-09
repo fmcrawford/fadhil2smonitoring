@@ -34,6 +34,15 @@ COLLECTOR_SECRET = os.getenv(
     "",
 ).strip()
 
+COLLECTOR_ID = os.getenv(
+    "COLLECTOR_ID",
+    (
+        "cloud"
+        if os.getenv("RAILWAY_PROJECT_ID")
+        else "pc"
+    ),
+).strip().lower()
+
 COLLECTOR_INTERVAL = int(
     os.getenv(
         "COLLECTOR_INTERVAL",
@@ -54,6 +63,13 @@ if not DEPLEXO_INGEST_URL:
 if not COLLECTOR_SECRET:
     print(
         "ERROR: COLLECTOR_SECRET belum di-set."
+    )
+    sys.exit(1)
+
+
+if COLLECTOR_ID not in ("cloud", "pc"):
+    print(
+        "ERROR: COLLECTOR_ID harus 'cloud' atau 'pc'."
     )
     sys.exit(1)
 
@@ -144,6 +160,7 @@ def fetch_group(event):
 
 def send_snapshot(groups):
     payload = {
+        "collector_id": COLLECTOR_ID,
         "collector_time": now_iso(),
         "groups": groups,
     }
@@ -203,6 +220,10 @@ def main():
 
     print(
         f"Target: {DEPLEXO_INGEST_URL}"
+    )
+
+    print(
+        f"Collector ID: {COLLECTOR_ID}"
     )
 
     print(

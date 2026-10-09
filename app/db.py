@@ -69,6 +69,28 @@ def init_db():
                 sent_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS collector_source_state (
+                collector_id TEXT NOT NULL,
+                group_name TEXT NOT NULL,
+                last_seen TEXT,
+                last_success TEXT,
+                last_http INTEGER,
+                consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                consecutive_successes INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                PRIMARY KEY(collector_id, group_name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_collector_source_seen
+            ON collector_source_state(collector_id, last_seen);
+
+            CREATE TABLE IF NOT EXISTS collector_active_source (
+                group_name TEXT PRIMARY KEY,
+                collector_id TEXT NOT NULL,
+                switched_at TEXT NOT NULL,
+                reason TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS member_targets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -117,6 +139,200 @@ def init_db():
 
 def utcnow_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+
+def update_collector_source_state(
+    collector_id: str,
+    group_name: str,
+    ok: bool,
+    http_status,
+    error=None,
+):
+    """Persist health for one collector/group without changing ticket state."""
+    now = utcnow_iso()
+
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM collector_source_state
+            WHERE collector_id=? AND group_name=?
+            """,
+            (collector_id, group_name),
+        ).fetchone()
+
+        previous = dict(row) if row else {}
+
+        if ok:
+            failures = 0
+            successes = int(
+                previous.get("consecutive_successes", 0)
+                or 0
+            ) + 1
+            last_success = now
+            last_error = None
+        else:
+            failures = int(
+                previous.get("consecutive_failures", 0)
+                or 0
+            ) + 1
+            successes = 0
+            last_success = previous.get("last_success")
+            last_error = str(
+                error or "Collector source gagal."
+            )[:500]
+
+        conn.execute(
+            """
+            INSERT INTO collector_source_state(
+                collector_id,
+                group_name,
+                last_seen,
+                last_success,
+                last_http,
+                consecutive_failures,
+                consecutive_successes,
+                last_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(collector_id, group_name) DO UPDATE SET
+                last_seen=excluded.last_seen,
+                last_success=excluded.last_success,
+                last_http=excluded.last_http,
+                consecutive_failures=excluded.consecutive_failures,
+                consecutive_successes=excluded.consecutive_successes,
+                last_error=excluded.last_error
+            """,
+            (
+                collector_id,
+                group_name,
+                now,
+                last_success,
+                http_status,
+                failures,
+                successes,
+                last_error,
+            ),
+        )
+
+        saved = conn.execute(
+            """
+            SELECT *
+            FROM collector_source_state
+            WHERE collector_id=? AND group_name=?
+            """,
+            (collector_id, group_name),
+        ).fetchone()
+
+        return dict(saved)
+
+
+def list_collector_source_states(group_name=None):
+    with _connect() as conn:
+        if group_name:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM collector_source_state
+                WHERE group_name=?
+                ORDER BY collector_id
+                """,
+                (group_name,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM collector_source_state
+                ORDER BY collector_id, group_name
+                """
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
+
+def get_active_collector_source(
+    group_name: str,
+    default="cloud",
+):
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM collector_active_source
+            WHERE group_name=?
+            """,
+            (group_name,),
+        ).fetchone()
+
+        if row:
+            return dict(row)
+
+        now = utcnow_iso()
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO collector_active_source(
+                group_name,
+                collector_id,
+                switched_at,
+                reason
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                group_name,
+                default,
+                now,
+                "default cloud priority",
+            ),
+        )
+
+        row = conn.execute(
+            """
+            SELECT *
+            FROM collector_active_source
+            WHERE group_name=?
+            """,
+            (group_name,),
+        ).fetchone()
+
+        return dict(row)
+
+
+def set_active_collector_source(
+    group_name: str,
+    collector_id: str,
+    reason: str,
+):
+    now = utcnow_iso()
+
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO collector_active_source(
+                group_name,
+                collector_id,
+                switched_at,
+                reason
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(group_name) DO UPDATE SET
+                collector_id=excluded.collector_id,
+                switched_at=excluded.switched_at,
+                reason=excluded.reason
+            """,
+            (
+                group_name,
+                collector_id,
+                now,
+                str(reason or "")[:300],
+            ),
+        )
+
+    return {
+        "group_name": group_name,
+        "collector_id": collector_id,
+        "switched_at": now,
+        "reason": str(reason or "")[:300],
+    }
 
 
 def create_user(username, password_hash):

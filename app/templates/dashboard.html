@@ -136,6 +136,8 @@
   .a31-health-status{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900;white-space:nowrap}
   .a31-health-status.live{background:#0f2c21;color:#86efac}
   .a31-health-status.cached{background:#30270f;color:#fde68a}
+  .a31-health-status.retrying{background:#30270f;color:#fde68a}
+  .a31-health-status.degraded{background:#30270f;color:#fde68a}
   .a31-health-status.error{background:#35161b;color:#fda4af}
   .a31-health-status.off{background:#24242a;color:#d4d4d8}
   @media(max-width:980px){.a31-health{grid-template-columns:1fr 1fr}}
@@ -146,6 +148,8 @@
 {% set jkt_api = state["groups"]["JKT48"] %}
 {% set akb_api = state["groups"]["AKB48"] %}
 {% set mng_api = state["groups"]["JKT48_MNG"] %}
+{% set cloud_collector = state.get("collectors", {}).get("cloud", {}) %}
+{% set pc_collector = state.get("collectors", {}).get("pc", {}) %}
 
 {% set ac = namespace(targets=0, eligible=0, extra=0) %}
 {% for t in sniping_targets %}
@@ -175,20 +179,32 @@
 
   <section class="a31-health" aria-label="Monitoring health">
     <div class="a31-health-item">
-      <div class="a31-health-name"><b>JKT48 2-Shot</b><small>{{ jkt.available }} available / {{ jkt.total }} total</small></div>
+      <div class="a31-health-name"><b>JKT48 2-Shot</b><small>{{ jkt.available }} available / {{ jkt.total }} total • {% if jkt_api.source == "pc" %}🖥 PC{% else %}☁ CLOUD{% endif %}</small></div>
       <span class="a31-health-status {{ jkt_api.status }}">● {{ jkt_api.status|upper }}</span>
     </div>
     <div class="a31-health-item">
-      <div class="a31-health-name"><b>AKB48 2-Shot</b><small>{{ akb.available }} available / {{ akb.total }} total</small></div>
+      <div class="a31-health-name"><b>AKB48 2-Shot</b><small>{{ akb.available }} available / {{ akb.total }} total • {% if akb_api.source == "pc" %}🖥 PC{% else %}☁ CLOUD{% endif %}</small></div>
       <span class="a31-health-status {{ akb_api.status }}">● {{ akb_api.status|upper }}</span>
     </div>
     <div class="a31-health-item">
-      <div class="a31-health-name"><b>JKT48 M&G</b><small>{{ mng.available }} available / {{ mng.total }} total</small></div>
+      <div class="a31-health-name"><b>JKT48 M&G</b><small>{{ mng.available }} available / {{ mng.total }} total • {% if mng_api.source == "pc" %}🖥 PC{% else %}☁ CLOUD{% endif %}</small></div>
       <span class="a31-health-status {{ mng_api.status }}">● {{ mng_api.status|upper }}</span>
     </div>
     <div class="a31-health-item">
-      <div class="a31-health-name"><b>Local Collector</b><small id="collectorAge" data-ts="{{ state.collector_last_seen or '' }}">Last update: {{ state.collector_last_seen or "belum ada" }}</small></div>
-      <span class="a31-health-status {% if state.collector_last_seen %}live{% else %}off{% endif %}">{% if state.collector_last_seen %}● CONNECTED{% else %}● WAITING{% endif %}</span>
+      <div class="a31-health-name">
+        <b>Hybrid Collectors</b>
+        <small id="collectorAge" data-ts="{{ state.collector_last_seen or '' }}">
+          ☁ Cloud: {{ cloud_collector.get("status", "waiting")|upper }}
+          • 🖥 PC: {{ pc_collector.get("status", "waiting")|upper }}
+        </small>
+      </div>
+      {% if cloud_collector.get("status") == "connected" and pc_collector.get("status") == "connected" %}
+        <span class="a31-health-status live">● REDUNDANT</span>
+      {% elif cloud_collector.get("status") in ["connected", "degraded"] or pc_collector.get("status") in ["connected", "degraded"] %}
+        <span class="a31-health-status cached">● FALLBACK READY</span>
+      {% else %}
+        <span class="a31-health-status off">● WAITING</span>
+      {% endif %}
     </div>
   </section>
 
@@ -387,15 +403,15 @@
       <div class="a31-products">
         <div class="a31-product">
           <div class="a31-product-top"><h3>JKT48 2-Shot</h3><span class="a31-badge {{ jkt_api.status }}">{{ jkt_api.status|upper }}</span></div>
-          <div class="a31-product-meta">HTTP {{ jkt_api.last_http if jkt_api.last_http is not none else "-" }} • {{ jkt_api.last_success or "Belum ada" }}</div>
+          <div class="a31-product-meta">HTTP {{ jkt_api.last_http if jkt_api.last_http is not none else "-" }} • {{ jkt_api.last_success or "Belum ada" }} • Source {{ jkt_api.source|upper }}</div>
         </div>
         <div class="a31-product">
           <div class="a31-product-top"><h3>AKB48 2-Shot</h3><span class="a31-badge {{ akb_api.status }}">{{ akb_api.status|upper }}</span></div>
-          <div class="a31-product-meta">HTTP {{ akb_api.last_http if akb_api.last_http is not none else "-" }} • {{ akb_api.last_success or "Belum ada" }}</div>
+          <div class="a31-product-meta">HTTP {{ akb_api.last_http if akb_api.last_http is not none else "-" }} • {{ akb_api.last_success or "Belum ada" }} • Source {{ akb_api.source|upper }}</div>
         </div>
         <div class="a31-product">
           <div class="a31-product-top"><h3>JKT48 M&G</h3><span class="a31-badge {{ mng_api.status }}">{{ mng_api.status|upper }}</span></div>
-          <div class="a31-product-meta">HTTP {{ mng_api.last_http if mng_api.last_http is not none else "-" }} • {{ mng_api.last_success or "Belum ada" }}</div>
+          <div class="a31-product-meta">HTTP {{ mng_api.last_http if mng_api.last_http is not none else "-" }} • {{ mng_api.last_success or "Belum ada" }} • Source {{ mng_api.source|upper }}</div>
         </div>
       </div>
 
