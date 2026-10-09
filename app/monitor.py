@@ -9,6 +9,7 @@ import requests
 from .config import settings
 from .db import (
     add_restock_log,
+    claim_schedule_run,
     get_active_collector_source,
     list_collector_source_states,
     list_enabled_webhooks,
@@ -711,45 +712,46 @@ def available_mng_highlights_text(members):
     return "\n".join(lines)[:3800]
 
 
+def _scheduled_group_live(group_meta, group_name):
+    return group_meta.get(group_name, {}).get("status") == "live"
+
+
 def send_scheduled_report(members, report_hour, group_meta=None):
     hooks = list_enabled_webhooks()
-
     if not hooks:
-        return
+        return 0
 
     group_meta = group_meta or {}
-
     jkt_text = available_group_text(members, "JKT48")
     akb_text = available_group_text(members, "AKB48")
     mng_highlight_text = available_mng_highlights_text(members)
+    sent_messages = 0
 
     for hook in hooks:
         try:
             webhook_url = decrypt_webhook(hook["webhook_url_enc"])
-
             shot_fields = []
+            sent_groups = []
 
-            if hook["notify_jkt"]:
-                status = group_meta.get("JKT48", {}).get("status", "cached")
-                suffix = " ⚠️ cached" if status in ("cached", "error") else ""
+            if hook["notify_jkt"] and _scheduled_group_live(group_meta, "JKT48"):
                 shot_fields.append(
                     {
-                        "name": f"🏢 JKT48 2-Shot{suffix}",
+                        "name": "🏢 JKT48 2-Shot",
                         "value": jkt_text,
                         "inline": False,
                     }
                 )
+                sent_groups.append("JKT48")
 
-            if hook["notify_akb"]:
-                status = group_meta.get("AKB48", {}).get("status", "cached")
-                suffix = " ⚠️ cached" if status in ("cached", "error") else ""
+            if hook["notify_akb"] and _scheduled_group_live(group_meta, "AKB48"):
                 shot_fields.append(
                     {
-                        "name": f"🏢 AKB48 2-Shot{suffix}",
+                        "name": "🏢 AKB48 2-Shot",
                         "value": akb_text,
                         "inline": False,
                     }
                 )
+                sent_groups.append("AKB48")
 
             if shot_fields:
                 send_embed(
@@ -759,23 +761,36 @@ def send_scheduled_report(members, report_hour, group_meta=None):
                     COLOR_PURPLE,
                     fields=shot_fields,
                 )
+                sent_messages += 1
 
-            if hook["notify_mng"]:
-                status = group_meta.get(MNG_GROUP, {}).get("status", "cached")
-                suffix = " ⚠️ cached" if status in ("cached", "error") else ""
-
+            if (
+                hook["notify_mng"]
+                and _scheduled_group_live(group_meta, MNG_GROUP)
+            ):
                 send_embed(
                     webhook_url,
-                    f"🤝 M&G HIGHLIGHT • {report_hour:02d}:00 WIB{suffix}",
+                    f"🤝 M&G HIGHLIGHT • {report_hour:02d}:00 WIB",
                     (
                         "Hanya menampilkan **member pantauan yang masih tersedia**.\n\n"
                         f"{mng_highlight_text}"
                     ),
                     COLOR_ORANGE,
                 )
+                sent_messages += 1
+                sent_groups.append(MNG_GROUP)
+
+            if sent_groups:
+                log.info(
+                    "Scheduled report webhook id=%s name=%s groups=%s",
+                    hook["id"],
+                    hook["name"],
+                    ",".join(sent_groups),
+                )
 
         except Exception:
             log.exception("Scheduled report gagal webhook id=%s", hook["id"])
+
+    return sent_messages
 
 
 class MonitorService:
@@ -1576,7 +1591,9 @@ class MonitorService:
         if now.minute >= 5:
             return
 
-        schedule_key = f"{now.date().isoformat()}-{now.hour}"
+        schedule_key = (
+            f"scheduled-report:{now.date().isoformat()}:{now.hour:02d}"
+        )
         if self.last_schedule_key == schedule_key:
             return
 
@@ -1584,10 +1601,36 @@ class MonitorService:
         if not state["members"]:
             return
 
-        send_scheduled_report(
+        live_groups = [
+            group
+            for group in GROUP_NAMES
+            if state["groups"].get(group, {}).get("status") == "live"
+        ]
+
+        if not live_groups:
+            log.info(
+                "Scheduled report %02d:00 WIB ditunda: tidak ada group LIVE.",
+                now.hour,
+            )
+            return
+
+        if not claim_schedule_run(schedule_key):
+            self.last_schedule_key = schedule_key
+            log.info(
+                "Scheduled report %02d:00 WIB sudah pernah diproses.",
+                now.hour,
+            )
+            return
+
+        sent_messages = send_scheduled_report(
             state["members"],
             now.hour,
             group_meta=state["groups"],
         )
         self.last_schedule_key = schedule_key
-        log.info("Scheduled report %02d:00 WIB terkirim.", now.hour)
+        log.info(
+            "Scheduled report %02d:00 WIB selesai. messages=%s live_groups=%s",
+            now.hour,
+            sent_messages,
+            ",".join(live_groups),
+        )
